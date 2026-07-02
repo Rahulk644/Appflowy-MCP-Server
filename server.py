@@ -468,7 +468,9 @@ def create_page(
     body = {"parent_view_id": parent_view_id, "layout": 0, "name": name}
     if page_data:
         body["page_data"] = json.loads(page_data)
-    return _post(f"/api/workspace/{workspace_id}/page-view", body)
+    res = _post(f"/api/workspace/{workspace_id}/page-view", body)
+    # this endpoint returns {"view_id","database_id"}; the tool contract is the view_id
+    return res["view_id"] if isinstance(res, dict) else res
 
 
 @mcp.tool()
@@ -486,7 +488,8 @@ def create_database(
         "layout": _DB_LAYOUTS[layout],
         "name": name,
     }
-    return _post(f"/api/workspace/{workspace_id}/page-view", body)
+    res = _post(f"/api/workspace/{workspace_id}/page-view", body)
+    return res["view_id"] if isinstance(res, dict) else res
 
 
 @mcp.tool()
