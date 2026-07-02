@@ -1,0 +1,8 @@
+.env
+.venv
+.git
+__pycache__/
+*.pyc
+.ruff_cache
+.vercel
+.github

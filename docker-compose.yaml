@@ -1,0 +1,15 @@
+services:
+  appflowy-mcp:
+    build: .
+    restart: always
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.appflowy-mcp.rule=Host(`${MCP_HOST}`)"
+      - "traefik.http.routers.appflowy-mcp.entrypoints=websecure"
+      - "traefik.http.routers.appflowy-mcp.tls.certresolver=letsencrypt"
+      - "traefik.http.services.appflowy-mcp.loadbalancer.server.port=8000"
+# Note: Traefik labels are one option. The recommended gate is to keep the port
+# unpublished and front the service with a Cloudflare Tunnel + Access so it is
+# never reachable on the open internet. See SECURITY.md.

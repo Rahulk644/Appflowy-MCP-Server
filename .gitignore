@@ -1,0 +1,21 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+client-config.json
+connector-link.txt
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+
+# Deploy artifacts
+.vercel/
