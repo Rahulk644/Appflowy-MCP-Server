@@ -167,6 +167,7 @@ if os.environ.get("GOOGLE_CLIENT_ID") and OAUTH_ISSUER:
         google_client_id=os.environ["GOOGLE_CLIENT_ID"],
         google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET", ""),
         allowed_emails=_csv_env("ALLOWED_EMAILS"),
+        store_path=os.environ.get("OAUTH_STORE_PATH") or None,
     )
 
 # Token management

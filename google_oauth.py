@@ -6,12 +6,16 @@ Google and allow-list emails. The SDK (mcp.server.auth) provides the /authorize,
 /token, /register and discovery routes; this provider implements the storage and
 federates authorize() to Google.
 
-Stores are in-memory (single instance) — tokens are lost on restart and users
-just sign in again. Fine for a personal / OSS server; swap for a shared store if
-you scale out.
+Stores are in-memory by default. Set OAUTH_STORE_PATH (a path on a mounted volume)
+to persist issued tokens + registered clients across restarts, so a redeploy doesn't
+force users to sign in again; leave it unset to keep everything in-memory. Swap for a
+shared store if you scale out.
 """
 
+import json
+import os
 import secrets
+import sys
 import time
 from urllib.parse import urlencode
 
@@ -36,7 +40,14 @@ def _tok(n: int = 32) -> str:
 
 
 class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
-    def __init__(self, issuer, google_client_id, google_client_secret, allowed_emails):
+    def __init__(
+        self,
+        issuer,
+        google_client_id,
+        google_client_secret,
+        allowed_emails,
+        store_path=None,
+    ):
         self.issuer = issuer.rstrip("/")
         self.gcid = google_client_id
         self.gcs = google_client_secret
@@ -47,12 +58,57 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
         self.codes: dict[str, AuthorizationCode] = {}
         self.access: dict[str, AccessToken] = {}
         self.refresh: dict[str, RefreshToken] = {}
+        # Optional persistence so tokens survive restarts. Point at a MOUNTED volume
+        # (a bare container path is wiped on rebuild). Transient stores (pending,
+        # codes) are intentionally not persisted — a re-auth in flight just retries.
+        self.store_path = store_path or None
+        self._load()
+
+    def _load(self) -> None:
+        if not self.store_path or not os.path.exists(self.store_path):
+            return
+        try:
+            with open(self.store_path) as f:
+                data = json.load(f)
+            self.clients = {
+                k: OAuthClientInformationFull.model_validate(v)
+                for k, v in data.get("clients", {}).items()
+            }
+            self.access = {
+                k: AccessToken.model_validate(v)
+                for k, v in data.get("access", {}).items()
+            }
+            self.refresh = {
+                k: RefreshToken.model_validate(v)
+                for k, v in data.get("refresh", {}).items()
+            }
+        except Exception as e:  # noqa: BLE001 - a bad store must never block boot
+            print(f"[oauth] token store unreadable ({e}); starting empty", file=sys.stderr)
+
+    def _save(self) -> None:
+        if not self.store_path:
+            return
+        try:
+            data = {
+                "clients": {k: v.model_dump(mode="json") for k, v in self.clients.items()},
+                "access": {k: v.model_dump(mode="json") for k, v in self.access.items()},
+                "refresh": {k: v.model_dump(mode="json") for k, v in self.refresh.items()},
+            }
+            os.makedirs(os.path.dirname(self.store_path) or ".", exist_ok=True)
+            tmp = f"{self.store_path}.tmp"
+            with open(tmp, "w") as f:
+                json.dump(data, f)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, self.store_path)  # atomic
+        except Exception as e:  # noqa: BLE001 - persistence must never break auth
+            print(f"[oauth] could not persist token store ({e})", file=sys.stderr)
 
     async def get_client(self, client_id):
         return self.clients.get(client_id)
 
     async def register_client(self, client_info: OAuthClientInformationFull):
         self.clients[client_info.client_id] = client_info
+        self._save()
 
     async def authorize(self, client, params: AuthorizationParams) -> str:
         # Stash the MCP client's authorization request, then send the browser to
@@ -102,6 +158,7 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
             expires_at=now + 30 * 86400,
             subject=authorization_code.subject,
         )
+        self._save()
         return OAuthToken(
             access_token=at,
             token_type="Bearer",
@@ -130,6 +187,7 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
             expires_at=now + 3600,
             subject=refresh_token.subject,
         )
+        self._save()
         return OAuthToken(
             access_token=at,
             token_type="Bearer",
@@ -142,6 +200,7 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
         tok = getattr(token, "token", None)
         self.access.pop(tok, None)
         self.refresh.pop(tok, None)
+        self._save()
 
     async def handle_google_callback(self, code: str, state: str):
         """Called by the /auth/google/callback route after Google sign-in."""

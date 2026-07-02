@@ -20,6 +20,9 @@ All notable changes are documented here. The format loosely follows
 - **Google-federated OAuth** sign-in with an email allow-list — MCP discovery,
   dynamic client registration, and PKCE (enabled via `GOOGLE_CLIENT_ID` /
   `OAUTH_ISSUER`). Clients can connect with just the server URL.
+- Optional **persistent OAuth token store** (`OAUTH_STORE_PATH`): issued tokens +
+  registered clients survive restarts, so a redeploy no longer forces re-sign-in.
+  Atomic `0600` file on a mounted volume; `docker-compose` ships an `oauth-data` volume.
 - **Streamable HTTP** transport (alongside stdio and legacy SSE), an agent
   **knowledge pack** (server instructions + `KNOWLEDGE.md`), and a server icon.
 

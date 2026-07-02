@@ -4,6 +4,8 @@
 !.env.example
 client-config.json
 connector-link.txt
+oauth-store.json
+*.oauth-store.json
 
 # Python
 .venv/
