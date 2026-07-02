@@ -1,0 +1,27 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="640" fill="#0E0C16"/>
+  <rect x="0" y="0" width="1280" height="8" fill="#A34AFD"/>
+  <g opacity="0.10" fill="#A34AFD">
+    <rect x="1004" y="150" width="66" height="340" rx="18"/>
+    <rect x="1090" y="150" width="66" height="240" rx="18"/>
+    <rect x="1176" y="150" width="66" height="150" rx="18"/>
+  </g>
+  <g transform="translate(104,224)">
+    <rect width="150" height="150" rx="34" fill="#A34AFD"/>
+    <rect x="33" y="38" width="20" height="74" rx="7" fill="#ffffff"/>
+    <rect x="65" y="38" width="20" height="52" rx="7" fill="#ffffff" fill-opacity="0.92"/>
+    <rect x="97" y="38" width="20" height="36" rx="7" fill="#ffffff" fill-opacity="0.82"/>
+  </g>
+  <text x="292" y="318" font-family="Helvetica, Arial, sans-serif" font-size="70" font-weight="700" fill="#FFFFFF">AppFlowy MCP Server</text>
+  <text x="294" y="372" font-family="Helvetica, Arial, sans-serif" font-size="29" fill="#B9B1CC">Open-source MCP server for AppFlowy Cloud —</text>
+  <text x="294" y="414" font-family="Helvetica, Arial, sans-serif" font-size="29" fill="#B9B1CC">let AI agents read, build &amp; edit your workspace.</text>
+  <g font-family="Helvetica, Arial, sans-serif" font-size="23" font-weight="700">
+    <rect x="294" y="452" width="272" height="50" rx="25" fill="#1B1530" stroke="#3A2E57"/>
+    <text x="430" y="484" text-anchor="middle" fill="#C9BEE6">Model Context Protocol</text>
+    <rect x="582" y="452" width="168" height="50" rx="25" fill="#1B1530" stroke="#3A2E57"/>
+    <text x="666" y="484" text-anchor="middle" fill="#C9BEE6">Google OAuth</text>
+    <rect x="766" y="452" width="126" height="50" rx="25" fill="#1B1530" stroke="#3A2E57"/>
+    <text x="829" y="484" text-anchor="middle" fill="#C9BEE6">24 tools</text>
+  </g>
+  <text x="296" y="558" font-family="Helvetica, Arial, sans-serif" font-size="21" fill="#6E6685">github.com/Rahulk644/Appflowy-MCP-Server  ·  MIT License</text>
+</svg>

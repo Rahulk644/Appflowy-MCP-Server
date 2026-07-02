@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/social-preview.png" alt="AppFlowy MCP Server" width="840">
+</p>
+
 # AppFlowy MCP Server
 
 <div align="center">
