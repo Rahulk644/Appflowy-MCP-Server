@@ -25,6 +25,10 @@ All notable changes are documented here. The format loosely follows
 
 ### Changed
 - Endpoint auth now accepts a Bearer header, a `?token=` link, or OAuth.
+- Agent knowledge pack (`KNOWLEDGE.md` + shipped `instructions`) rewritten as a full
+  operator's guide: tool-by-task catalog, how-to recipes, best practices, a pitfalls /
+  "what to avoid" section (read-after-write lag, sub-tasks-in-body, …), and a data-model
+  reference.
 
 ### Security
 - Workspace scoping (`ALLOWED_WORKSPACE_IDS`) enforced on every tool, plus

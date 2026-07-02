@@ -89,13 +89,26 @@ FIELD TYPES (add_database_field): 0=RichText 1=Number 2=DateTime 3=SingleSelect
 
 EDIT DOCUMENT BLOCKS (Tier 2 / collab): add_block (any type incl. ADVANCED —
 callout, toggle_list, quote, code, heading; pass block-specific `data`),
-edit_block_text, delete_block. So you can build and restructure documents fully.
+edit_block_text, delete_block. page_id may be a document view id OR a database ROW
+id — a row id auto-resolves to the card's BODY document, so this is how you add a
+checkbox/sub-task to a Kanban card. Put per-card checklists in the card BODY, never
+in a shared column (a column value shows on every card).
+
+BEST PRACTICE: Own cards you create with a deterministic upsert pre_hash so re-runs
+update in place, never duplicate. A meeting follow-up is usually a CONTINUATION of an
+existing task — add it as a checkbox in that card's body, don't spawn a new card.
+
+AVOID: (1) Trusting an immediate re-read — get_database_row_details reads /row/detail,
+a materialized view that LAGS the live data by minutes; a write can be correct even
+when the re-read still shows the old value, so don't conclude it failed. (2) Guessing
+a database_id from a view_id (use list_databases). (3) Duplicate cards for follow-ups
+that continue an existing task. Note: the host may require a human to approve
+board-row DELETES.
 
 LIMITS: edited/added text is plain (inline bold/links not applied); multi-column
-layout and @mentions need specific block/data shapes — attempt via add_block with
-the right type + data. Not in AppFlowy at all: web-bookmark card, iframe/Drive
-embed, "Feed" view. Own cards you create with a deterministic upsert pre_hash so
-re-runs update in place, never duplicate.
+layout and @mentions need specific block/data shapes — attempt via add_block. Not in
+AppFlowy at all: web-bookmark card, iframe/Drive embed, "Feed" view. Full guide with
+recipes + data model: KNOWLEDGE.md.
 """
 
 # Server logo (three kanban columns on AppFlowy purple). Declared in the MCP
