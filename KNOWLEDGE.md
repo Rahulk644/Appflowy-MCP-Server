@@ -59,10 +59,20 @@ Full edit/delete on **any** row or document block, including UI-created ones:
   pass block-specific `data` (e.g. `{"icon":"💡"}`, `{"level":2}`, `{"language":"rust"}`).
 - **`edit_block_text`** / **`delete_block`** — edit or remove a specific block.
 
+> **Editing a card's body:** for these three tools, `page_id` may be a document's
+> own view id **or a database row id**. A row id is auto-resolved to the row's body
+> document (a separate collab at `uuid5(row_id, "document_id")`). This is how you add
+> a **checkbox / sub-task to a Kanban card** — put it in the card **body**, never in
+> a shared property column (a column value shows on every card).
+
 Remaining nuances: edited/added block text is plain (inline bold/links not applied);
 multi-column layout and @mentions need specific block/data shapes (attempt via
 `add_block`). Genuinely not in AppFlowy: web-bookmark/link-preview card,
 Google-Drive/iframe embed, "Feed" view.
+
+> **Read-after-write:** `get_database_row_details` reads AppFlowy's `/row/detail`,
+> a materialized view that can lag the collab by minutes. A write can be correct
+> even if an immediate re-read looks stale — verify against the collab, not that view.
 
 ## Task-card template (the "My Work" board)
 - `Description` = concise title · `Status` = To Do / Doing / Done.
@@ -73,6 +83,8 @@ Google-Drive/iframe embed, "Feed" view.
   never duplicate.
 
 ## Organizing principle
-One card = one work-item (action items live as a checklist inside its doc, not as
-separate cards). Meeting context → a Meetings database row + linked from the card.
-Keep the board to actionable tasks; archive Done regularly.
+One card = one work-item; a meeting's follow-ups are often **continuations** of an
+existing task — fold them into that card as `todo_list` checkboxes in its **body**
+(via `add_block` on the row id), rather than creating new cards. Action items live
+as a checklist inside the card doc. Meeting context → a Meetings database row +
+linked from the card. Keep the board to actionable tasks; archive Done regularly.

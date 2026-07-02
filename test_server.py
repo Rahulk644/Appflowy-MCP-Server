@@ -45,3 +45,13 @@ def test_auth_middleware_and_transports_boot():
         # link method: token as ?token= query param
         assert client.get("/nope?token=test-secret-123").status_code == 404
         assert client.get("/nope?token=wrong").status_code == 401
+
+
+def test_row_document_id_derivation():
+    # A database row's body document is a separate collab at
+    # uuid5(row_uuid, "document_id"); add_block/edit_block_text/delete_block
+    # resolve a row id to it. Locked against a synthetic id.
+    assert (
+        server._row_document_id("11111111-1111-1111-1111-111111111111")
+        == "f972a45d-1193-586f-99a2-89f5406db9fc"
+    )

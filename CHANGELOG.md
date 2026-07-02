@@ -11,6 +11,9 @@ All notable changes are documented here. The format loosely follows
   `add_block`, `edit_block_text`, `delete_block` — edit, move, and delete *any*
   existing row or document block (including UI-created ones), and place advanced
   blocks (callout, toggle, quote, code, …) that the REST API alone can't create.
+- `add_block` / `edit_block_text` / `delete_block` accept a **database row id** for
+  `page_id`, auto-resolving to the row's body document (`uuid5(row_id, "document_id")`),
+  so agents can add checklist sub-tasks to a Kanban card by its row id.
 - **Structure tools**: `create_page`, `create_database` (grid/board/calendar),
   `create_database_view`, `add_database_field`, `append_blocks`, `create_space`,
   `move_page`, `duplicate_page`, `trash_page`, `list_databases`, `get_page`.
@@ -26,6 +29,11 @@ All notable changes are documented here. The format loosely follows
 ### Security
 - Workspace scoping (`ALLOWED_WORKSPACE_IDS`) enforced on every tool, plus
   DNS-rebinding protection for the HTTP transports.
+
+### Fixed
+- `create_page` / `create_database` returned a dict but were annotated `-> str`,
+  raising an output-validation error *after* the page was created; they now return
+  the `view_id` string.
 
 ## [0.1.0]
 

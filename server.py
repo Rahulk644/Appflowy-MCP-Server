@@ -28,6 +28,7 @@ import os
 import secrets
 import string
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -283,6 +284,26 @@ def _nid(n: int = 10) -> str:
     return "".join(
         secrets.choice(string.ascii_letters + string.digits) for _ in range(n)
     )
+
+
+def _row_document_id(row_id: str) -> str:
+    """A database row's body document (the card page below the row) is a separate
+    collab; AppFlowy derives its object id as uuid5(row_uuid, "document_id")."""
+    return str(uuid.uuid5(uuid.UUID(row_id), "document_id"))
+
+
+def _open_document(workspace_id: str, page_id: str):
+    """Load a document collab for block editing. `page_id` may be the document's own
+    view id OR a database row id — a row id is transparently resolved to the row's
+    body document (so agents can edit a Kanban card's checklist by its row id).
+    Returns (doc, object_id, document_map); pass object_id back to _collab_web_update."""
+    doc = _collab_doc(workspace_id, page_id, 0)
+    root = doc.get("data", type=Map)
+    if "document" not in root:
+        page_id = _row_document_id(page_id)
+        doc = _collab_doc(workspace_id, page_id, 0)
+        root = doc.get("data", type=Map)
+    return doc, page_id, root["document"]
 
 
 @mcp.tool()
@@ -678,10 +699,10 @@ def add_block(
     end of the page (or of parent_block_id). Returns the new block id.
     data (optional): JSON of block-specific data, e.g. {"level":2} heading,
     {"icon":"💡"} callout, {"checked":false} todo_list, {"language":"rust"} code.
-    page_id = the document's view id."""
+    page_id = a document's view id, OR a database row id — a row id is auto-resolved
+    to the row's body document (this is how you add a checkbox/sub-task to a card)."""
     _require_workspace(workspace_id)
-    doc = _collab_doc(workspace_id, page_id, 0)
-    d = doc.get("data", type=Map)["document"]
+    doc, page_id, d = _open_document(workspace_id, page_id)
     blocks, meta = d["blocks"], d["meta"]
     cmap, tmap = meta["children_map"], meta["text_map"]
     parent = parent_block_id or d["page_id"]
@@ -710,10 +731,10 @@ def add_block(
 
 @mcp.tool()
 def edit_block_text(workspace_id: str, page_id: str, block_id: str, text: str) -> str:
-    """Replaces the text of an existing document block (plain-text replacement)."""
+    """Replaces the text of an existing document block (plain-text replacement).
+    page_id may be a document view id or a database row id (auto-resolved)."""
     _require_workspace(workspace_id)
-    doc = _collab_doc(workspace_id, page_id, 0)
-    d = doc.get("data", type=Map)["document"]
+    doc, page_id, d = _open_document(workspace_id, page_id)
     block = d["blocks"][block_id]
     tmap = d["meta"]["text_map"]
     ext = block["external_id"] if "external_id" in block else None
@@ -736,10 +757,9 @@ def edit_block_text(workspace_id: str, page_id: str, block_id: str, text: str) -
 @mcp.tool()
 def delete_block(workspace_id: str, page_id: str, block_id: str) -> str:
     """Deletes a block from a document (removes it from its parent, plus its text
-    and children references)."""
+    and children references). page_id may be a document view id or a row id."""
     _require_workspace(workspace_id)
-    doc = _collab_doc(workspace_id, page_id, 0)
-    d = doc.get("data", type=Map)["document"]
+    doc, page_id, d = _open_document(workspace_id, page_id)
     blocks, cmap, tmap = d["blocks"], d["meta"]["children_map"], d["meta"]["text_map"]
     if block_id not in blocks:
         raise ValueError(f"block {block_id} not found")
