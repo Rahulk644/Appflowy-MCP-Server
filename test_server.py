@@ -64,12 +64,16 @@ def test_oauth_store_persists_across_instances(tmp_path):
     from mcp.server.auth.provider import AccessToken
 
     path = str(tmp_path / "oauth.json")
-    p = GoogleOAuthProvider("https://mcp.example.com", "cid", "sec", ["a@b.com"], store_path=path)
+    p = GoogleOAuthProvider(
+        "https://mcp.example.com", "cid", "sec", ["a@b.com"], store_path=path
+    )
     p.access["tok1"] = AccessToken(
         token="tok1", client_id="c1", scopes=["appflowy"], expires_at=9999999999
     )
     p._save()
 
-    p2 = GoogleOAuthProvider("https://mcp.example.com", "cid", "sec", ["a@b.com"], store_path=path)
+    p2 = GoogleOAuthProvider(
+        "https://mcp.example.com", "cid", "sec", ["a@b.com"], store_path=path
+    )
     assert "tok1" in p2.access
     assert p2.access["tok1"].client_id == "c1"

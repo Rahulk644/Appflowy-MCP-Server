@@ -83,16 +83,24 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
                 for k, v in data.get("refresh", {}).items()
             }
         except Exception as e:  # noqa: BLE001 - a bad store must never block boot
-            print(f"[oauth] token store unreadable ({e}); starting empty", file=sys.stderr)
+            print(
+                f"[oauth] token store unreadable ({e}); starting empty", file=sys.stderr
+            )
 
     def _save(self) -> None:
         if not self.store_path:
             return
         try:
             data = {
-                "clients": {k: v.model_dump(mode="json") for k, v in self.clients.items()},
-                "access": {k: v.model_dump(mode="json") for k, v in self.access.items()},
-                "refresh": {k: v.model_dump(mode="json") for k, v in self.refresh.items()},
+                "clients": {
+                    k: v.model_dump(mode="json") for k, v in self.clients.items()
+                },
+                "access": {
+                    k: v.model_dump(mode="json") for k, v in self.access.items()
+                },
+                "refresh": {
+                    k: v.model_dump(mode="json") for k, v in self.refresh.items()
+                },
             }
             os.makedirs(os.path.dirname(self.store_path) or ".", exist_ok=True)
             tmp = f"{self.store_path}.tmp"
