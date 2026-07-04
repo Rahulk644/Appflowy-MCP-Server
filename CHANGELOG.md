@@ -36,6 +36,9 @@ All notable changes are documented here. The format loosely follows
   option id to use as a cell value; idempotent by name; strict color validation so a
   bad color can't wipe the option set) and `delete_select_option` (by option id or
   label) for SingleSelect/MultiSelect columns.
+- **`set_group_by`** (collab/CRDT): sets which field a Board view groups its columns by.
+  For a SingleSelect/MultiSelect it writes the same group structure the client does — a
+  leading "No <field>" column then one per option — so the board re-groups immediately.
 - **Structure tools**: `create_page`, `create_database` (grid/board/calendar),
   `create_database_view`, `add_database_field`, `append_blocks`, `create_space`,
   `move_page`, `duplicate_page`, `trash_page`, `restore_page`, `rename_page`

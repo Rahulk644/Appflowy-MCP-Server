@@ -163,6 +163,30 @@ def test_select_option_add_and_delete(monkeypatch):
         server.delete_select_option("ws-allowed", "db", "F2", "ghost")
 
 
+def test_set_group_by(monkeypatch):
+    from pycrdt import Map
+
+    doc = _synthetic_db_doc()
+    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
+    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    root = doc.get("data", type=Map)["database"]
+
+    oid = server.add_select_option(
+        "ws-allowed", "db", "F2", "Open"
+    )  # F2 is SingleSelect
+    assert server.set_group_by("ws-allowed", "db", "V1", "F2") == "V1"
+
+    gs = root["views"]["V1"]["groups"][0]
+    assert gs["field_id"] == "F2" and gs["ty"] == 3
+    # columns = the "no value" group (field_id) then one per option
+    assert [g["id"] for g in list(gs["groups"])] == ["F2", oid]
+
+    with pytest.raises(ValueError):  # unknown view
+        server.set_group_by("ws-allowed", "db", "NOPE", "F2")
+    with pytest.raises(ValueError):  # unknown field
+        server.set_group_by("ws-allowed", "db", "V1", "NOPE")
+
+
 def _synthetic_row_doc(data0="old"):
     from pycrdt import Doc, Map
 

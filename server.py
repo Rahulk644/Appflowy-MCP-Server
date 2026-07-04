@@ -72,7 +72,8 @@ setting its Status cell to the target option id), delete_row (hard-delete a row)
 EDIT SCHEMA: update_database_field (rename a column) and delete_database_field
 (drop it) — Tier 2/collab, no REST. add_select_option (returns the new option id —
 use THAT as the cell value) and delete_select_option manage SingleSelect/MultiSelect
-options. rename_page renames a page/database/space; restore_page un-trashes a page.
+options. set_group_by(view_id, field_id) sets which field a Board groups its columns
+by. rename_page renames a page/database/space; restore_page un-trashes a page.
 
 ROW/CARD DOCUMENTS accept MARKDOWN and render as real blocks: #/##/### headings,
 "- "/"1. " lists, "- [ ]" interactive checkboxes, "> " quote, ```lang code,
@@ -801,6 +802,49 @@ def delete_select_option(
         _write_select(field, tk, data)
     _collab_web_update(workspace_id, database_id, doc, sv, 1)
     return match["id"]
+
+
+@mcp.tool(annotations=_WRITE)
+def set_group_by(
+    workspace_id: str, database_id: str, view_id: str, field_id: str
+) -> str:
+    """Sets the field a Board view groups its columns by (Tier 2 / collab — AppFlowy has
+    no REST for it). view_id: the Board view (from list_databases); field_id: the field
+    to group by. A SingleSelect/MultiSelect gives one column per option plus a leading
+    "No <field>" column; other groupable types (e.g. Checkbox) regenerate on the client.
+    Replaces any existing grouping. Returns the view_id."""
+    _require_workspace(workspace_id)
+    doc, root = _open_database(workspace_id, database_id)
+    views = root["views"]
+    if view_id not in views:
+        raise ValueError(f"view {view_id} not found in this database")
+    fields = root["fields"]
+    if field_id not in fields:
+        raise ValueError(f"field {field_id} not found in this database")
+    ftype = int(fields[field_id]["ty"]) if "ty" in fields[field_id] else 0
+    # A select's columns are the field's "no value" group (id == field_id) followed by
+    # one group per option (id == option id) — mirror exactly what the client writes so
+    # the board renders immediately. Other types are left for the client to regenerate.
+    if ftype in _SELECT_TYPES:
+        _, sel = _read_select(fields[field_id])
+        groups = [{"id": field_id, "visible": True}] + [
+            {"id": o["id"], "visible": True} for o in sel["options"]
+        ]
+    else:
+        groups = []
+    setting = {
+        "id": f"g:{_nid(6)}",
+        "field_id": field_id,
+        "ty": ftype,
+        "content": "",
+        "groups": groups,
+        "collapsed_group_ids": [],
+    }
+    sv = doc.get_state()
+    with doc.transaction():
+        views[view_id]["groups"] = _to_yjs([setting])
+    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    return view_id
 
 
 @mcp.tool(annotations=_CREATE)

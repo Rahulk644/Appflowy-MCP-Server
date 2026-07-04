@@ -36,7 +36,7 @@ Not just *view* a Kanban board: create databases and pages, move cards, edit and
 
 **Edit & delete — any row or block** (collab/CRDT layer) — `update_row_cells` (e.g. move a Board card by setting its Status), `delete_row`, `add_block` (incl. advanced: callout / toggle / quote / code…), `edit_block_text`, `delete_block`
 
-**Schema editing** (collab/CRDT) — `update_database_field`, `delete_database_field`, `add_select_option`, `delete_select_option`
+**Schema editing** (collab/CRDT) — `update_database_field`, `delete_database_field`, `add_select_option`, `delete_select_option`, `set_group_by` (Board grouping)
 
 Row bodies accept **Markdown**, rendered into real blocks (headings, lists, interactive checkboxes, tables, code, math). Field-type ids, the page block-tree schema, and the full block palette are documented in [KNOWLEDGE.md](KNOWLEDGE.md).
 

@@ -39,6 +39,7 @@ A row holds content in two distinct places:
 | New doc / database / view / field | `create_page`, `create_database`, `create_database_view`, `add_database_field` |
 | **Rename / delete a column** | `update_database_field`, `delete_database_field` |
 | **Add / remove a select option** | `add_select_option`, `delete_select_option` |
+| **Group a Board by a field** | `set_group_by` |
 | Add / upsert a row (card) | `create_database_row`, `upsert_database_row` |
 | Append to a doc (end only) | `append_blocks` |
 | Reorganize | `create_space`, `move_page`, `duplicate_page`, `trash_page`, `restore_page` |
@@ -69,6 +70,8 @@ GFM tables, `---`, links, `$math$`. It renders into real blocks.
 **Build a board from scratch** — `create_database(layout="board")` → `add_database_field`
 for a SingleSelect status column → `add_select_option` for each column (e.g. To Do /
 Doing / Done) → `create_database_row` per card, setting the status cell to an option id.
+Switch which field the columns represent with `set_group_by(view_id, field_id)` (the
+`view_id` is the Board view from `list_databases`).
 
 **Read a whole database** — `list_databases` (view → `database_id`) → `get_database_fields`
 (field ids + select-option ids) → `get_database_row_ids` → `get_database_row_details`
