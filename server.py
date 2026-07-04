@@ -36,6 +36,8 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from markdown_it import MarkdownIt
+from markdown_it.tree import SyntaxTreeNode
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pycrdt import Array, Doc, Map, Text
@@ -75,20 +77,20 @@ use THAT as the cell value) and delete_select_option manage SingleSelect/MultiSe
 options. set_group_by(view_id, field_id) sets which field a Board groups its columns
 by. rename_page renames a page/database/space; restore_page un-trashes a page.
 
-ROW/CARD DOCUMENTS accept MARKDOWN and render as real blocks: #/##/### headings,
-"- "/"1. " lists, "- [ ]" interactive checkboxes, "> " quote, ```lang code,
-GFM tables, "---" divider, links, images, $math$. Use markdown for card bodies.
+CONTENT IS MARKDOWN EVERYWHERE. create_page(markdown=...), append_blocks(markdown=...),
+and a row/card `document` all take standard Markdown, rendered into real blocks:
+#/##/### headings, "- "/"1. " lists (nestable), "- [ ]" checkboxes, "> " quote,
+```lang fenced code, "---" divider, images, links, and inline **bold**/*italic*/
+~~strike~~/`code`. Prefer markdown for any prose or card body.
 
-PAGE page_data is a JSON block tree, e.g.
+For blocks Markdown can't express, pass a page_data JSON block tree instead, e.g.
 {"type":"page","children":[
   {"type":"heading","data":{"level":1,"delta":[{"insert":"Title"}]}},
-  {"type":"paragraph","data":{"delta":[{"insert":"hi ","attributes":{}},
-     {"insert":"bold","attributes":{"bold":true}}]}},
   {"type":"todo_list","data":{"delta":[{"insert":"task"}],"checked":false}},
   {"type":"divider"}]}
 Block types: paragraph, heading(data.level 1-6), bulleted_list, numbered_list,
-todo_list(data.checked), quote, divider, image(data.url). Delta attributes:
-bold, italic, underline, strikethrough, code, color, href.
+todo_list(data.checked), quote, code(data.language), divider, image(data.url).
+Delta attrs: bold, italic, underline, strikethrough, code, color, href.
 
 FIELD TYPES (add_database_field): 0=RichText 1=Number 2=DateTime 3=SingleSelect
 4=MultiSelect 5=Checkbox 6=URL 7=Checklist 8=LastEditedTime 9=CreatedTime.
@@ -111,10 +113,12 @@ when the re-read still shows the old value, so don't conclude it failed. (2) Gue
 database_id from a folder view_id (use list_databases). (3) Full-overwriting a document —
 the edit tools send merging updates; never PUT a whole collab.
 
-LIMITS: edited/added text is plain (inline bold/links not applied); multi-column
-layout and @mentions need specific block/data shapes — attempt via add_block. Not in
-AppFlowy at all: web-bookmark card, iframe/Drive embed, "Feed" view. Full guide with
-recipes + data model: KNOWLEDGE.md.
+LIMITS: in-place edits (add_block/edit_block_text) write PLAIN text (no inline
+bold/links/color yet). NOT SUPPORTED YET (roadmap — see KNOWLEDGE.md §9 Coverage):
+columns, toggle headings, table of contents, @mentions, link-to-page, web-bookmark,
+Drive/iframe embed, file/video/audio upload, List/Gallery/Chart/Feed views, and inline
+or linked database views. AI blocks (AI note/summarize/ask) run AppFlowy's own AI and
+aren't insertable content. Full guide + coverage matrix: KNOWLEDGE.md.
 """
 
 # Server logo (three kanban columns on AppFlowy purple). Declared in the MCP
@@ -596,19 +600,205 @@ def list_databases(workspace_id: str) -> list:
     return _api_call("GET", path).json().get("data", [])
 
 
+# ---- Markdown → AppFlowy block tree ---------------------------------------
+# AppFlowy Cloud converts Markdown → blocks server-side for ROW bodies, but the
+# page-view create endpoint only accepts a structured block tree. So we do what
+# Notion's MCP does: parse Markdown here (markdown-it, the reference CommonMark
+# parser) and emit the block tree create_page / append_blocks feed to AppFlowy —
+# one Markdown content interface everywhere. Covers the basic-block palette;
+# unknown constructs fall back to a paragraph so text is never silently dropped.
+# ponytail: MVP palette — callouts/toggles/columns and tables-as-blocks are
+# roadmap (a GFM table degrades to its plaintext for now).
+
+_md_parser = MarkdownIt("commonmark").enable(["table", "strikethrough"])
+
+_INLINE_ATTR = {"strong": "bold", "em": "italic", "s": "strikethrough"}
+_TASK_PREFIXES = {"[ ] ": False, "[x] ": True, "[X] ": True}
+
+
+def _delta_op(text: str, attrs: dict) -> dict:
+    op = {"insert": text}
+    if attrs:
+        op["attributes"] = dict(attrs)
+    return op
+
+
+def _inline_delta(node) -> list:
+    """A markdown-it 'inline' node -> AppFlowy delta (list of insert ops)."""
+    ops: list = []
+
+    def walk(children, attrs):
+        for c in children:
+            t = c.type
+            if t == "text":
+                if c.content:
+                    ops.append(_delta_op(c.content, attrs))
+            elif t in ("softbreak", "hardbreak"):
+                ops.append(_delta_op("\n", attrs))
+            elif t == "code_inline":
+                ops.append(_delta_op(c.content, {**attrs, "code": True}))
+            elif t in _INLINE_ATTR:
+                walk(c.children, {**attrs, _INLINE_ATTR[t]: True})
+            elif t == "link":
+                walk(c.children, {**attrs, "href": c.attrs.get("href", "")})
+            elif t == "image":
+                alt = c.content or c.attrs.get("alt", "")
+                if alt:
+                    ops.append(_delta_op(alt, attrs))
+            elif c.children:
+                walk(c.children, attrs)
+            elif c.content:
+                ops.append(_delta_op(c.content, attrs))
+
+    walk(node.children, {})
+    return ops
+
+
+def _first_inline(node):
+    for c in node.children:
+        if c.type == "inline":
+            return c
+    return None
+
+
+def _delta_of(node) -> list:
+    inl = _first_inline(node)
+    return _inline_delta(inl) if inl else []
+
+
+def _sole_image_url(para_node):
+    """If a paragraph is a lone image, return its src (AppFlowy image is a block,
+    not inline); else None."""
+    inl = _first_inline(para_node)
+    if not inl:
+        return None
+    imgs = [c for c in inl.children if c.type == "image"]
+    other = [
+        c
+        for c in inl.children
+        if c.type not in ("image", "softbreak", "hardbreak")
+        and (c.content or c.children)
+    ]
+    return imgs[0].attrs.get("src", "") if len(imgs) == 1 and not other else None
+
+
+def _task_state(delta):
+    """If the delta starts with a GFM task marker, return (checked, stripped_delta);
+    else None."""
+    if not delta or "attributes" in delta[0]:
+        return None
+    lead_ops, lead = 0, ""
+    for o in delta:
+        if "attributes" in o:
+            break
+        lead += o["insert"]
+        lead_ops += 1
+    for pref, checked in _TASK_PREFIXES.items():
+        if lead.startswith(pref):
+            remainder = lead[len(pref) :]
+            rest = delta[lead_ops:]
+            new = ([{"insert": remainder}] if remainder else []) + [
+                dict(o) for o in rest
+            ]
+            return checked, (new or [{"insert": ""}])
+    return None
+
+
+def _node_plaintext(node) -> str:
+    if node.type in ("fence", "code_block"):
+        return node.content.rstrip("\n")
+    if not node.children:
+        return node.content or ""
+    return "".join(_node_plaintext(c) for c in node.children)
+
+
+def _list_item_block(li, list_type):
+    delta, children = [], []
+    for c in li.children:
+        if c.type == "paragraph" and not delta and not children:
+            delta = _delta_of(c)
+        else:
+            children.extend(_block_from_node(c))
+    task = _task_state(delta)
+    if task is not None:
+        block = {"type": "todo_list", "data": {"checked": task[0], "delta": task[1]}}
+    else:
+        block = {"type": list_type, "data": {"delta": delta or [{"insert": ""}]}}
+    if children:
+        block["children"] = children
+    return block
+
+
+def _block_from_node(node) -> list:
+    """Map one markdown-it block node -> zero or more AppFlowy blocks."""
+    t = node.type
+    if t == "heading":
+        lvl = min(max(int(node.tag[1:]), 1), 6)
+        return [{"type": "heading", "data": {"level": lvl, "delta": _delta_of(node)}}]
+    if t == "paragraph":
+        url = _sole_image_url(node)
+        if url:
+            return [{"type": "image", "data": {"url": url}}]
+        return [{"type": "paragraph", "data": {"delta": _delta_of(node)}}]
+    if t == "hr":
+        return [{"type": "divider", "data": {}}]
+    if t in ("fence", "code_block"):
+        lang = (node.info or "").strip().split(" ")[0] if t == "fence" else ""
+        code = node.content.rstrip("\n")
+        return [
+            {"type": "code", "data": {"language": lang, "delta": [{"insert": code}]}}
+        ]
+    if t == "blockquote":
+        parts = [_delta_of(c) for c in node.children if c.type == "paragraph"]
+        delta = []
+        for i, p in enumerate(parts):
+            if i:
+                delta.append({"insert": "\n"})
+            delta.extend(p)
+        return [{"type": "quote", "data": {"delta": delta or [{"insert": ""}]}}]
+    if t == "bullet_list":
+        return [_list_item_block(li, "bulleted_list") for li in node.children]
+    if t == "ordered_list":
+        return [_list_item_block(li, "numbered_list") for li in node.children]
+    text = _node_plaintext(node)
+    return (
+        [{"type": "paragraph", "data": {"delta": [{"insert": text}]}}] if text else []
+    )
+
+
+def _md_to_blocks(markdown: str) -> list:
+    """Parse Markdown into an AppFlowy page block-tree (list of block dicts)."""
+    tree = SyntaxTreeNode(_md_parser.parse(markdown or ""))
+    blocks: list = []
+    for node in tree.children:
+        blocks.extend(_block_from_node(node))
+    return blocks
+
+
 @mcp.tool(annotations=_CREATE)
 def create_page(
-    workspace_id: str, parent_view_id: str, name: str, page_data: str = ""
+    workspace_id: str,
+    parent_view_id: str,
+    name: str,
+    markdown: str = "",
+    page_data: str = "",
 ) -> str:
     """Creates a Document page under parent_view_id; returns the new view_id.
-    page_data (optional): JSON string of a block tree
-    {"type":"page","children":[...]}. Block types: paragraph, heading
-    (data.level), bulleted_list, numbered_list, todo_list (data.checked), quote,
-    divider, image (data.url); delta attrs: bold/italic/underline/strikethrough/
-    code/color/href. For long prose prefer creating a row with a Markdown document."""
+
+    Preferred — `markdown`: standard Markdown is rendered into real AppFlowy
+    blocks (headings; bulleted / numbered / `- [ ]` task lists incl. nesting;
+    quotes; fenced code with language; dividers; images; and inline **bold**,
+    *italic*, ~~strike~~, `code`, and [links](url)).
+    e.g. markdown="# Plan\\n\\n- [ ] draft\\n- [x] outline".
+
+    Advanced — `page_data`: a raw block-tree JSON
+    ({"type":"page","children":[...]}) for blocks Markdown can't express. Pass
+    either markdown or page_data (markdown wins if both are given)."""
     _require_workspace(workspace_id)
     body = {"parent_view_id": parent_view_id, "layout": 0, "name": name}
-    if page_data:
+    if markdown:
+        body["page_data"] = {"type": "page", "children": _md_to_blocks(markdown)}
+    elif page_data:
         body["page_data"] = json.loads(page_data)
     res = _post(f"/api/workspace/{workspace_id}/page-view", body)
     # this endpoint returns {"view_id","database_id"}; the tool contract is the view_id
@@ -848,14 +1038,25 @@ def set_group_by(
 
 
 @mcp.tool(annotations=_CREATE)
-def append_blocks(workspace_id: str, view_id: str, blocks: str) -> str:
-    """Appends blocks to the END of a document (append-only — cannot edit/insert
-    mid-document). blocks: JSON array of block objects (same shape as create_page
-    children)."""
+def append_blocks(
+    workspace_id: str, view_id: str, markdown: str = "", blocks: str = ""
+) -> str:
+    """Appends content to the END of a document (append-only — cannot edit or
+    insert mid-document; use edit_block_text / add_block for that).
+
+    Preferred — `markdown`: rendered into real blocks (same palette as
+    create_page). Advanced — `blocks`: a JSON array of block objects
+    ({"type":...,"data":...}). Pass either markdown or blocks."""
     _require_workspace(workspace_id)
+    if markdown:
+        payload = _md_to_blocks(markdown)
+    elif blocks:
+        payload = json.loads(blocks)
+    else:
+        raise ValueError("provide `markdown` (preferred) or `blocks`")
     return _post(
         f"/api/workspace/{workspace_id}/page-view/{view_id}/append-block",
-        {"blocks": json.loads(blocks)},
+        {"blocks": payload},
     )
 
 

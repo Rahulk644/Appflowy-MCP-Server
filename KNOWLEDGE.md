@@ -153,6 +153,8 @@ Yellow · Lime · Green · Aqua · Blue · Cream · Mint · Sky · Lilac · Pear
 Coral · Sapphire · Moss · Sand · Charcoal. Any other value is rejected (a bad color
 makes AppFlowy drop every option).
 
+**Create a page from Markdown** — `create_page(ws, parent, name, markdown="# Title\n- item\n- [ ] task")` (and `append_blocks(ws, view_id, markdown=...)`) render standard Markdown into blocks — the same converter used for row bodies. For blocks Markdown can't express, pass a `page_data` block tree:
+
 **Standalone page body** (`create_page` `page_data`) — a block tree:
 ```json
 {"type":"page","children":[
@@ -167,8 +169,72 @@ todo_list (data.checked), quote, divider, image (data.url)`. Delta attributes:
 `bold, italic, underline, strikethrough, code, color, href`. Advanced blocks
 (callout, toggle_list, code) are placed via `add_block` with the matching `data`.
 
-**Not in AppFlowy** (don't attempt): web-bookmark / link-preview card,
-Google-Drive/iframe embed, a "Feed" view.
+**Nuances:** collab-edited/added text is plain (inline bold / links / color not
+applied yet). See **§9 Coverage** for the full AppFlowy-vs-MCP support matrix.
 
-**Nuances:** collab-edited/added text is plain (inline bold/links not applied);
-multi-column layout and @mentions need specific block/data shapes.
+## 9. Coverage: AppFlowy vs. this MCP
+What AppFlowy's editor/API can do, and what this MCP can create today. Reach for a
+supported path first, and check the roadmap before assuming a gap is permanent.
+
+**Legend:** ✅ full · 🟡 partial · 🗺️ roadmap · ⛔ not an MCP capability (runs AppFlowy AI).
+
+**Basic blocks**
+| AppFlowy option | MCP | How |
+|---|---|---|
+| Text / paragraph | ✅ | Markdown body, `page_data`, or `add_block` |
+| Heading 1–3 | ✅ | `#`/`##`/`###`, or `add_block heading` (`data.level`) |
+| Bulleted / Numbered / To-do list | ✅ | `- `/`1. `/`- [ ]`, or `add_block` |
+| Quote | ✅ | `> `, or `add_block quote` |
+| Code | ✅ | ` ```lang ` fence, or `add_block code` (`data.language`) |
+| Callout | ✅ | `add_block callout` (`data.icon`) — not from Markdown |
+| Toggle list | ✅ | `add_block toggle_list` — not from Markdown |
+| Divider | ✅ | `---`, or `add_block divider` |
+| Simple table | 🟡 | GFM table in a Markdown body; no table-edit tool |
+| Link to page / Breadcrumb | 🗺️ | needs a `sub_page`/mention block |
+
+**Media**
+| AppFlowy option | MCP | How |
+|---|---|---|
+| Image (external URL) | ✅ | `![](url)` or `add_block image` (`data.url`) |
+| File / PDF / Video / Audio / Photo gallery | 🗺️ | need file upload |
+| Web bookmark / Google Drive embed | 🗺️ | `link_preview` / embed block |
+
+**Database**
+| AppFlowy option | MCP | How |
+|---|---|---|
+| Full-page Grid / Board / Calendar | ✅ | `create_database` |
+| Extra Grid / Board / Calendar views | ✅ | `create_database_view` |
+| Board grouping | ✅ | `set_group_by` |
+| Select options (single / multi) | ✅ | `add_select_option` / `delete_select_option` |
+| List / Gallery / Chart / Feed views | 🗺️ | layout map has grid/board/calendar only |
+| Inline database (in a doc) / Linked view | 🗺️ | block referencing a data source |
+
+**Advanced blocks**
+| AppFlowy option | MCP | How |
+|---|---|---|
+| Inline equation `$…$` | ✅ | Markdown body |
+| Block equation `$$` | 🟡 | `add_block math_equation` (`data.formula`) — verify before relying |
+| Columns (2–5) | 🗺️ | needs nested `column` children |
+| Toggle heading / Table of contents | 🗺️ | |
+| Mermaid diagram | 🗺️ | renders as a code block, not a diagram |
+
+**Inline formatting**
+| AppFlowy option | MCP | How |
+|---|---|---|
+| Bold / italic / underline / strike / code / link | ✅ page bodies · 🟡 in-place edits | `page_data` delta or Markdown; `add_block`/`edit_block_text` write plain text |
+| Text color | ✅ | `page_data` delta `color` attr |
+| Background color | 🗺️ | |
+| @mention a person / page | 🗺️ | inline mention delta — foundation for agents-as-members |
+| Emoji | ✅ | Unicode |
+| Date & reminder | 🗺️ | |
+
+**AI blocks** — AI Meeting Note, Transcript, Summarize, Ask AI, Continue writing: ⛔
+these trigger AppFlowy's own AI service; not content this (or any) MCP inserts.
+
+**Advanced-block `data` shapes** for `add_block(page_id, block_type, text, data)` — it
+accepts any block type; the useful non-basic ones (text is inserted PLAIN):
+- **callout** — `data='{"icon":"💡"}'`
+- **code** — `data='{"language":"python"}'`
+- **heading** — `data='{"level":2}'`
+- **toggle_list** — add children via `parent_block_id`
+- **math_equation** — `data='{"formula":"E=mc^2"}'` (verify before relying on it)

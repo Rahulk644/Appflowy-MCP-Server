@@ -21,6 +21,13 @@ All notable changes are documented here. The format loosely follows
   no longer mis-typed.
 
 ### Added
+- **Markdown for pages.** `create_page` and `append_blocks` now take a `markdown=`
+  argument — standard Markdown (headings; nested bulleted / numbered / `- [ ]` task
+  lists; quotes; fenced code with language; dividers; images; and inline
+  bold / italic / strikethrough / code / links) is parsed (via `markdown-it-py`) into
+  the AppFlowy block tree. One Markdown content interface for pages and row bodies
+  alike, mirroring Notion's MCP. The JSON `page_data` / `blocks` path stays for blocks
+  Markdown can't express.
 - **Collab/CRDT layer** (via `pycrdt`): `update_row_cells`, `delete_row`,
   `add_block`, `edit_block_text`, `delete_block` — edit, move, and delete *any*
   existing row or document block (including UI-created ones), and place advanced

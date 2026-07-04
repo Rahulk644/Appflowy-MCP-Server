@@ -38,7 +38,25 @@ Not just *view* a Kanban board: create databases and pages, move cards, edit and
 
 **Schema editing** (collab/CRDT) — `update_database_field`, `delete_database_field`, `add_select_option`, `delete_select_option`, `set_group_by` (Board grouping)
 
-Row bodies accept **Markdown**, rendered into real blocks (headings, lists, interactive checkboxes, tables, code, math). Field-type ids, the page block-tree schema, and the full block palette are documented in [KNOWLEDGE.md](KNOWLEDGE.md).
+**Pages and row bodies both accept Markdown**, rendered into real blocks (headings, nested lists, interactive checkboxes, tables, code, math) — `create_page(markdown=…)`, `append_blocks(markdown=…)`, or a row's `document`. Field-type ids, the block-tree schema, and the full block palette are documented in [KNOWLEDGE.md](KNOWLEDGE.md).
+
+## 📦 What you can build
+
+AppFlowy's editor and API offer a large palette of blocks, views, and inline styles.
+Here's what this MCP creates **today** — the rest is on the roadmap below.
+
+**Legend:** ✅ full · 🟡 partial · 🗺️ roadmap · ⛔ not an MCP capability
+
+| Category | Supported now | Partial / roadmap |
+|---|---|---|
+| **Text blocks** | Text, Heading 1–3, bulleted / numbered / to-do lists, quote, code, callout, toggle, divider | 🟡 simple table (GFM in Markdown) · 🗺️ link-to-page, breadcrumb |
+| **Media** | Image by URL | 🗺️ file / PDF / video / audio upload, photo gallery, web bookmark, Drive embed |
+| **Database** | Full-page Grid / Board / Calendar, extra views, Board grouping, select options | 🗺️ List / Gallery / Chart / Feed views, inline & linked views |
+| **Advanced** | Inline equation `$…$` | 🗺️ columns, toggle headings, table of contents, block equation, Mermaid |
+| **Inline style** | Bold / italic / underline / strike / code / link / color (in page bodies), emoji | 🟡 plain text on in-place edits · 🗺️ @mentions, background color, date & reminder |
+| **AI blocks** | — | ⛔ AI note / transcript / summarize / ask — these run AppFlowy's own AI, not insertable content |
+
+Block-by-block detail lives in [KNOWLEDGE.md](KNOWLEDGE.md) (§9 Coverage).
 
 ## 🏗️ How it works
 
@@ -138,9 +156,17 @@ CI runs lint, format-check, and tests on every push/PR.
 
 ## 🗺️ Roadmap
 
-- Pagination + filtering on large database reads
-- Reorder fields; manage filters, sorts, and Board grouping
-- Richer inline formatting on collab edits
+**Content & blocks**
+- **Richer editing** — insert-at-position and search-and-replace *by content* (no block ids), plus rich inline formatting (bold / links / color) on in-place edits.
+- **@mentions** — mention a person or page inline; the foundation for agents-as-workspace-members.
+- **More blocks** — columns, toggle headings, table of contents, block equation, Mermaid, link-to-page.
+- **Import files** — PDF / Word / PowerPoint / Excel / audio → Markdown → AppFlowy blocks (via [markitdown](https://github.com/microsoft/markitdown)), reusing the Markdown converter.
+- **Media** — file / PDF / image / video / audio upload, web bookmark, embeds.
+
+**Databases**
+- **More views & layouts** — List, Gallery, Chart, Feed; inline and linked database views.
+- **Filters, sorts, and field reorder** on views.
+- Pagination + filtering on large database reads.
 
 ## 🤝 Contributing
 

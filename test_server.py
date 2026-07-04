@@ -281,3 +281,61 @@ def test_oauth_store_persists_across_instances(tmp_path):
     )
     assert "tok1" in p2.access
     assert p2.access["tok1"].client_id == "c1"
+
+
+def test_md_to_blocks_covers_core_palette():
+    # The Markdown content interface: one string -> the AppFlowy block tree
+    # create_page / append_blocks feed to AppFlowy.
+    md = (
+        "# Title\n\n"
+        "Some **bold**, *italic*, `code`, ~~struck~~, and [a link](http://x.com).\n\n"
+        "- one\n"
+        "- two\n"
+        "  - nested\n"
+        "- [ ] todo\n"
+        "- [x] done\n\n"
+        "1. first\n"
+        "2. second\n\n"
+        "> quoted line\n\n"
+        '```python\nprint("hi")\n```\n\n'
+        "---\n\n"
+        "![pic](http://img/p.png)\n"
+    )
+    blocks = server._md_to_blocks(md)
+
+    assert blocks[0] == {
+        "type": "heading",
+        "data": {"level": 1, "delta": [{"insert": "Title"}]},
+    }
+    # inline formatting in the paragraph
+    ops = next(b for b in blocks if b["type"] == "paragraph")["data"]["delta"]
+    assert {"insert": "bold", "attributes": {"bold": True}} in ops
+    assert {"insert": "italic", "attributes": {"italic": True}} in ops
+    assert {"insert": "code", "attributes": {"code": True}} in ops
+    assert {"insert": "struck", "attributes": {"strikethrough": True}} in ops
+    assert any(o.get("attributes", {}).get("href") == "http://x.com" for o in ops)
+    # lists: nesting + GFM task state (checked/unchecked, marker stripped)
+    assert any(b["type"] == "bulleted_list" and "children" in b for b in blocks)
+    todos = [b for b in blocks if b["type"] == "todo_list"]
+    assert [t["data"]["checked"] for t in todos] == [False, True]
+    assert [t["data"]["delta"][0]["insert"] for t in todos] == ["todo", "done"]
+    assert any(b["type"] == "numbered_list" for b in blocks)
+    # quote, code (with language), divider, image block
+    assert any(b["type"] == "quote" for b in blocks)
+    code = next(b for b in blocks if b["type"] == "code")
+    assert code["data"]["language"] == "python"
+    assert code["data"]["delta"][0]["insert"] == 'print("hi")'
+    assert any(b["type"] == "divider" for b in blocks)
+    img = next(b for b in blocks if b["type"] == "image")
+    assert img["data"]["url"] == "http://img/p.png"
+
+
+def test_md_to_blocks_empty_and_fallback():
+    assert server._md_to_blocks("") == []
+    assert server._md_to_blocks("   \n") == []
+    # an unsupported construct (GFM table) degrades to plaintext, never dropped
+    blocks = server._md_to_blocks("| a | b |\n|---|---|\n| 1 | 2 |")
+    assert blocks and all(b["type"] == "paragraph" for b in blocks)
+    assert (
+        "".join(o["insert"] for b in blocks for o in b["data"]["delta"]).strip() != ""
+    )
