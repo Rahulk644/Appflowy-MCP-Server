@@ -842,7 +842,7 @@ def trash_page(workspace_id: str, view_id: str) -> str:
 
 @mcp.tool(annotations=_WRITE)
 def rename_page(workspace_id: str, view_id: str, name: str) -> str:
-    """Renames any page, database/board, or space (by its view_id). To retitle a Kanban
+    """Renames any page, database/board, or space (by its view_id). To retitle a Board
     CARD, set the row's primary cell via update_row_cells instead — a card is a row,
     not a page."""
     _require_workspace(workspace_id)
