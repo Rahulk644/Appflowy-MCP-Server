@@ -69,6 +69,11 @@ EDIT/DELETE ANY ROW (Tier 2 / collab — works even on UI-created rows):
 update_row_cells (change cells on any existing row — e.g. move a Kanban card by
 setting its Status cell to the target option id), delete_row (hard-delete a row).
 
+EDIT SCHEMA: update_database_field (rename a column) and delete_database_field
+(drop it) — Tier 2/collab, no REST. add_select_option (returns the new option id —
+use THAT as the cell value) and delete_select_option manage SingleSelect/MultiSelect
+options. rename_page renames a page/database/space; restore_page un-trashes a page.
+
 ROW/CARD DOCUMENTS accept MARKDOWN and render as real blocks: #/##/### headings,
 "- "/"1. " lists, "- [ ]" interactive checkboxes, "> " quote, ```lang code,
 GFM tables, "---" divider, links, images, $math$. Use markdown for card bodies.
@@ -336,6 +341,62 @@ def _to_yjs(v):
     return v
 
 
+# Select fields store their whole SelectTypeOption as a JSON STRING under
+# type_option["<field_type>"]["content"] = {"options":[{id,name,color}], "disable_color"}.
+# color must be one of these exact names — an invalid value makes AppFlowy's
+# deserialize fail and silently drop every option, so we validate strictly.
+_SELECT_TYPES = {3, 4}  # 3=SingleSelect, 4=MultiSelect
+SELECT_COLORS = [
+    "Purple",
+    "Pink",
+    "LightPink",
+    "Orange",
+    "Yellow",
+    "Lime",
+    "Green",
+    "Aqua",
+    "Blue",
+    "Cream",
+    "Mint",
+    "Sky",
+    "Lilac",
+    "Pearl",
+    "Sunset",
+    "Coral",
+    "Sapphire",
+    "Moss",
+    "Sand",
+    "Charcoal",
+]
+
+
+def _read_select(field):
+    """Parse a select field's options. Returns (type_key, data) where data is
+    {"options":[{id,name,color}], "disable_color":bool}. Raises if not a select."""
+    ty = int(field["ty"]) if "ty" in field else -1
+    if ty not in _SELECT_TYPES:
+        raise ValueError("field is not a SingleSelect/MultiSelect column")
+    tk = str(ty)
+    content = ""
+    to = field["type_option"] if "type_option" in field else None
+    if to is not None and tk in to and "content" in to[tk]:
+        content = to[tk]["content"]
+    data = json.loads(content) if content else {}
+    data.setdefault("options", [])
+    data.setdefault("disable_color", False)
+    return tk, data
+
+
+def _write_select(field, tk, data):
+    """Serialize the options dict back into type_option[tk]["content"] (a JSON string)."""
+    if "type_option" not in field:
+        field["type_option"] = Map()
+    to = field["type_option"]
+    if tk not in to:
+        to[tk] = Map()
+    to[tk]["content"] = json.dumps(data, separators=(",", ":"))
+
+
 @mcp.tool()
 def get_workspaces() -> list:
     """Retrieves your AppFlowy workspaces (filtered to ALLOWED_WORKSPACE_IDS if set)."""
@@ -586,12 +647,14 @@ def update_database_field(
     name: str = "",
     type_option: str = "",
 ) -> str:
-    """Renames a field/column and/or replaces its type-option data (Tier 2 / collab —
-    AppFlowy has no REST endpoint for this). name: the new column name. type_option
-    (advanced): JSON of the field's FULL type_option map — the way to add/rename/remove
-    SingleSelect & MultiSelect options; read the current shape from get_database_fields
-    first and write it back modified. Does NOT convert the field's data type (delete +
-    add_database_field for that). Only the given attributes change. Returns the field_id."""
+    """Renames a field/column and/or replaces its raw type-option data (Tier 2 / collab —
+    AppFlowy has no REST endpoint for this). name: the new column name. To add/remove
+    SingleSelect/MultiSelect OPTIONS use add_select_option / delete_select_option — NOT
+    this. type_option (advanced escape hatch): JSON of the field's raw collab type_option
+    map, stored verbatim; note select options live as a JSON string at
+    type_option["<ty>"]["content"], so a naive options array here will corrupt the field.
+    Does NOT convert the field's data type. Only the given attributes change. Returns
+    the field_id."""
     _require_workspace(workspace_id)
     if not name and not type_option:
         raise ValueError("provide name and/or type_option to change")
@@ -641,6 +704,74 @@ def delete_database_field(workspace_id: str, database_id: str, field_id: str) ->
                 del view["field_settings"][field_id]
     _collab_web_update(workspace_id, database_id, doc, sv, 1)
     return field_id
+
+
+@mcp.tool()
+def add_select_option(
+    workspace_id: str,
+    database_id: str,
+    field_id: str,
+    name: str,
+    color: str = "Purple",
+) -> str:
+    """Adds an option to a SingleSelect/MultiSelect column (Tier 2 / collab — AppFlowy
+    has no REST for it). Returns the option id — pass THAT id (not the label) as the
+    cell value in update_row_cells. Idempotent by name: if an option with this name
+    already exists its id is returned unchanged. color must be one of Purple, Pink,
+    LightPink, Orange, Yellow, Lime, Green, Aqua, Blue, Cream, Mint, Sky, Lilac, Pearl,
+    Sunset, Coral, Sapphire, Moss, Sand, Charcoal (default Purple)."""
+    _require_workspace(workspace_id)
+    if not name:
+        raise ValueError("option name is required")
+    if color not in SELECT_COLORS:
+        raise ValueError(f"color must be one of: {', '.join(SELECT_COLORS)}")
+    doc, root = _open_database(workspace_id, database_id)
+    fields = root["fields"]
+    if field_id not in fields:
+        raise ValueError(f"field {field_id} not found in this database")
+    field = fields[field_id]
+    tk, data = _read_select(field)
+    for opt in data["options"]:
+        if opt.get("name") == name:
+            return opt["id"]  # idempotent — don't create a duplicate
+    existing = {o["id"] for o in data["options"]}
+    oid = _nid(4)
+    while oid in existing:
+        oid = _nid(4)
+    sv = doc.get_state()
+    with doc.transaction():
+        data["options"].append({"id": oid, "name": name, "color": color})
+        _write_select(field, tk, data)
+    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    return oid
+
+
+@mcp.tool()
+def delete_select_option(
+    workspace_id: str, database_id: str, field_id: str, option: str
+) -> str:
+    """Removes an option from a SingleSelect/MultiSelect column by its option id OR its
+    label/name (Tier 2 / collab). Rows still tagged with it keep the now-orphaned id
+    harmlessly (AppFlowy ignores unknown option ids). Returns the removed option id."""
+    _require_workspace(workspace_id)
+    doc, root = _open_database(workspace_id, database_id)
+    fields = root["fields"]
+    if field_id not in fields:
+        raise ValueError(f"field {field_id} not found in this database")
+    field = fields[field_id]
+    tk, data = _read_select(field)
+    match = next(
+        (o for o in data["options"] if o["id"] == option or o.get("name") == option),
+        None,
+    )
+    if match is None:
+        raise ValueError(f"no option with id or name {option!r} in this field")
+    sv = doc.get_state()
+    with doc.transaction():
+        data["options"] = [o for o in data["options"] if o["id"] != match["id"]]
+        _write_select(field, tk, data)
+    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    return match["id"]
 
 
 @mcp.tool()

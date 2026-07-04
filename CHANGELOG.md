@@ -15,10 +15,13 @@ All notable changes are documented here. The format loosely follows
   `page_id`, auto-resolving to the row's body document (`uuid5(row_id, "document_id")`),
   so agents can add checklist sub-tasks to a Kanban card by its row id.
 - **Field/schema editing** (collab/CRDT — AppFlowy exposes no REST for it):
-  `update_database_field` renames a column and/or rewrites its `type_option`
-  (the way to add/rename/remove SingleSelect & MultiSelect options), and
+  `update_database_field` renames a column (or writes its raw `type_option`), and
   `delete_database_field` removes a column from the schema and every view's column
   order. The primary/title field is guarded against deletion.
+- **Select-option management** (collab/CRDT): `add_select_option` (returns the new
+  option id to use as a cell value; idempotent by name; strict color validation so a
+  bad color can't wipe the option set) and `delete_select_option` (by option id or
+  label) for SingleSelect/MultiSelect columns.
 - **Structure tools**: `create_page`, `create_database` (grid/board/calendar),
   `create_database_view`, `add_database_field`, `append_blocks`, `create_space`,
   `move_page`, `duplicate_page`, `trash_page`, `restore_page`, `rename_page`

@@ -38,6 +38,7 @@ A row holds content in two distinct places:
 | See what changed | `list_updated_rows` |
 | New doc / database / view / field | `create_page`, `create_database`, `create_database_view`, `add_database_field` |
 | **Rename / delete a column** | `update_database_field`, `delete_database_field` |
+| **Add / remove a select option** | `add_select_option`, `delete_select_option` |
 | Add / upsert a row (card) | `create_database_row`, `upsert_database_row` |
 | Append to a doc (end only) | `append_blocks` |
 | Reorganize | `create_space`, `move_page`, `duplicate_page`, `trash_page`, `restore_page` |
@@ -75,9 +76,14 @@ rather than creating a new card.
 
 **Rename or delete a column** — `update_database_field(database_id, field_id, name="…")`
 renames it; `delete_database_field(database_id, field_id)` removes it from the schema and
-every view (the primary/title column is protected). To edit a SingleSelect/MultiSelect's
-options, read the field from `get_database_fields`, modify its `type_option`, and pass it
-back via `update_database_field(..., type_option=<json>)`.
+every view (the primary/title column is protected).
+
+**Add or remove a select option** — `add_select_option(database_id, field_id, name,
+color="Purple")` returns the new **option id**; pass that id (not the label) to
+`update_row_cells` to tag a card. It's idempotent by name. `delete_select_option(
+database_id, field_id, option)` removes an option by id or label. (Don't hand-edit select
+options through `update_database_field`'s `type_option` — they live as a JSON string at
+`type_option["<ty>"]["content"]` and a wrong shape wipes the option set.)
 
 **Rename a page/board/space (not a card)** — `rename_page(view_id, name)` retitles a page,
 database, or space. A **card is a row**, not a page — retitle it by setting its primary
@@ -130,7 +136,9 @@ cell with `update_row_cells`, not `rename_page`.
 - **Database collab** (`type 1`): `data.database.fields` maps field id → field
   `{id, name, ty, is_primary, type_option}`; `data.database.views` maps view id → view,
   whose `field_orders` is the column order (array of `{id}`). `delete_database_field`
-  edits both. `type_option` is keyed by field-type string (`"3"` → the select options).
+  edits both. `type_option` is keyed by field-type string; for a select column
+  `type_option["3"]["content"]` is a **JSON string** `{"options":[{id,name,color}],
+  "disable_color"}` — option id is a `nanoid(4)`, color is a name (below).
 - **Document block** = `{id, ty, parent, children, data (a JSON string), external_id
   (→ text), external_type:"text"}`; block text lives in the doc's `text_map`, child
   order in its `children_map`.
@@ -139,6 +147,11 @@ cell with `update_row_cells`, not `rename_page`.
 **Field types** (`add_database_field`): `0` RichText · `1` Number · `2` DateTime ·
 `3` SingleSelect · `4` MultiSelect · `5` Checkbox · `6` URL · `7` Checklist ·
 `8` LastEditedTime · `9` CreatedTime.
+
+**Select-option colors** (`add_select_option`): Purple · Pink · LightPink · Orange ·
+Yellow · Lime · Green · Aqua · Blue · Cream · Mint · Sky · Lilac · Pearl · Sunset ·
+Coral · Sapphire · Moss · Sand · Charcoal. Any other value is rejected (a bad color
+makes AppFlowy drop every option).
 
 **Standalone page body** (`create_page` `page_data`) — a block tree:
 ```json

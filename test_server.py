@@ -129,6 +129,40 @@ def test_field_update_and_delete_mutate_collab(monkeypatch):
         server.update_database_field("ws-allowed", "db", "NOPE", name="x")
 
 
+def test_select_option_add_and_delete(monkeypatch):
+    # F2 is a SingleSelect (ty=3) with no options yet.
+    import json
+
+    from pycrdt import Map
+
+    doc = _synthetic_db_doc()
+    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
+    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    root = doc.get("data", type=Map)["database"]
+
+    oid = server.add_select_option("ws-allowed", "db", "F2", "Blocked", color="Blue")
+    assert isinstance(oid, str) and len(oid) == 4
+    assert (
+        server.add_select_option("ws-allowed", "db", "F2", "Blocked") == oid
+    )  # idempotent
+
+    # Options persist as a JSON STRING under type_option["3"]["content"].
+    data = json.loads(root["fields"]["F2"]["type_option"]["3"]["content"])
+    assert [o["name"] for o in data["options"]] == ["Blocked"]
+    assert data["options"][0]["color"] == "Blue"
+
+    with pytest.raises(ValueError):  # bad color would wipe options in AppFlowy
+        server.add_select_option("ws-allowed", "db", "F2", "X", color="Neon")
+    with pytest.raises(ValueError):  # F1 is not a select column
+        server.add_select_option("ws-allowed", "db", "F1", "X")
+
+    assert server.delete_select_option("ws-allowed", "db", "F2", "Blocked") == oid
+    data = json.loads(root["fields"]["F2"]["type_option"]["3"]["content"])
+    assert data["options"] == []
+    with pytest.raises(ValueError):  # no such option
+        server.delete_select_option("ws-allowed", "db", "F2", "ghost")
+
+
 def test_oauth_store_persists_across_instances(tmp_path):
     # Tokens must survive a restart: a fresh provider pointed at the same store
     # file reloads what a prior instance saved (this is what stops re-sign-in).
