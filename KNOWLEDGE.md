@@ -37,9 +37,11 @@ A row holds content in two distinct places:
 | Read rows | `get_database_row_ids`, `get_database_row_details` (`with_doc=true` for bodies) |
 | See what changed | `list_updated_rows` |
 | New doc / database / view / field | `create_page`, `create_database`, `create_database_view`, `add_database_field` |
+| **Rename / delete a column** | `update_database_field`, `delete_database_field` |
 | Add / upsert a row (card) | `create_database_row`, `upsert_database_row` |
 | Append to a doc (end only) | `append_blocks` |
-| Reorganize | `create_space`, `move_page`, `duplicate_page`, `trash_page` |
+| Reorganize | `create_space`, `move_page`, `duplicate_page`, `trash_page`, `restore_page` |
+| **Rename a page / database / space** | `rename_page` |
 | **Change a row's cells / move a card** | `update_row_cells` |
 | **Delete a row** | `delete_row` |
 | **Edit a card/doc body** | `add_block`, `edit_block_text`, `delete_block` |
@@ -70,6 +72,16 @@ next steps · action items · recording link.
 **Fold a follow-up into an existing task** — if a new action item continues an
 existing task, add it as a `todo_list` checkbox in that card's body (recipe above)
 rather than creating a new card.
+
+**Rename or delete a column** — `update_database_field(database_id, field_id, name="…")`
+renames it; `delete_database_field(database_id, field_id)` removes it from the schema and
+every view (the primary/title column is protected). To edit a SingleSelect/MultiSelect's
+options, read the field from `get_database_fields`, modify its `type_option`, and pass it
+back via `update_database_field(..., type_option=<json>)`.
+
+**Rename a page/board/space (not a card)** — `rename_page(view_id, name)` retitles a page,
+database, or space. A **card is a row**, not a page — retitle it by setting its primary
+cell with `update_row_cells`, not `rename_page`.
 
 **See what exists / changed** — `get_database_row_ids` then `get_database_row_details`
 (`with_doc=true` to read bodies), or `list_updated_rows` for a change feed.
@@ -115,6 +127,10 @@ rather than creating a new card.
 - **Row cell** = a map `{field_type, data, created_at, last_modified}`. `data` is a
   plain string for text/URL/number, an **option id** for SingleSelect, `"Yes"/"No"`
   for Checkbox.
+- **Database collab** (`type 1`): `data.database.fields` maps field id → field
+  `{id, name, ty, is_primary, type_option}`; `data.database.views` maps view id → view,
+  whose `field_orders` is the column order (array of `{id}`). `delete_database_field`
+  edits both. `type_option` is keyed by field-type string (`"3"` → the select options).
 - **Document block** = `{id, ty, parent, children, data (a JSON string), external_id
   (→ text), external_type:"text"}`; block text lives in the doc's `text_map`, child
   order in its `children_map`.

@@ -14,9 +14,15 @@ All notable changes are documented here. The format loosely follows
 - `add_block` / `edit_block_text` / `delete_block` accept a **database row id** for
   `page_id`, auto-resolving to the row's body document (`uuid5(row_id, "document_id")`),
   so agents can add checklist sub-tasks to a Kanban card by its row id.
+- **Field/schema editing** (collab/CRDT — AppFlowy exposes no REST for it):
+  `update_database_field` renames a column and/or rewrites its `type_option`
+  (the way to add/rename/remove SingleSelect & MultiSelect options), and
+  `delete_database_field` removes a column from the schema and every view's column
+  order. The primary/title field is guarded against deletion.
 - **Structure tools**: `create_page`, `create_database` (grid/board/calendar),
   `create_database_view`, `add_database_field`, `append_blocks`, `create_space`,
-  `move_page`, `duplicate_page`, `trash_page`, `list_databases`, `get_page`.
+  `move_page`, `duplicate_page`, `trash_page`, `restore_page`, `rename_page`
+  (page/database/space), `list_databases`, `get_page`.
 - **Google-federated OAuth** sign-in with an email allow-list — MCP discovery,
   dynamic client registration, and PKCE (enabled via `GOOGLE_CLIENT_ID` /
   `OAUTH_ISSUER`). Clients can connect with just the server URL.

@@ -320,6 +320,22 @@ def _open_document(workspace_id: str, page_id: str):
     return doc, page_id, root["document"]
 
 
+def _open_database(workspace_id: str, database_id: str):
+    """Load a database collab (type 1); return (doc, root) where root is the DATABASE
+    map holding 'fields' (field_id -> field) and 'views' (view_id -> view)."""
+    doc = _collab_doc(workspace_id, database_id, 1)
+    return doc, doc.get("data", type=Map)["database"]
+
+
+def _to_yjs(v):
+    """Recursively wrap plain JSON into pycrdt shared types for collab insertion."""
+    if isinstance(v, dict):
+        return Map({k: _to_yjs(x) for k, x in v.items()})
+    if isinstance(v, list):
+        return Array([_to_yjs(x) for x in v])
+    return v
+
+
 @mcp.tool()
 def get_workspaces() -> list:
     """Retrieves your AppFlowy workspaces (filtered to ALLOWED_WORKSPACE_IDS if set)."""
@@ -563,6 +579,71 @@ def add_database_field(
 
 
 @mcp.tool()
+def update_database_field(
+    workspace_id: str,
+    database_id: str,
+    field_id: str,
+    name: str = "",
+    type_option: str = "",
+) -> str:
+    """Renames a field/column and/or replaces its type-option data (Tier 2 / collab —
+    AppFlowy has no REST endpoint for this). name: the new column name. type_option
+    (advanced): JSON of the field's FULL type_option map — the way to add/rename/remove
+    SingleSelect & MultiSelect options; read the current shape from get_database_fields
+    first and write it back modified. Does NOT convert the field's data type (delete +
+    add_database_field for that). Only the given attributes change. Returns the field_id."""
+    _require_workspace(workspace_id)
+    if not name and not type_option:
+        raise ValueError("provide name and/or type_option to change")
+    doc, root = _open_database(workspace_id, database_id)
+    fields = root["fields"]
+    if field_id not in fields:
+        raise ValueError(f"field {field_id} not found in this database")
+    sv = doc.get_state()
+    with doc.transaction():
+        fld = fields[field_id]
+        if name:
+            fld["name"] = name
+        if type_option:
+            fld["type_option"] = _to_yjs(json.loads(type_option))
+        fld["last_modified"] = int(time.time())
+    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    return field_id
+
+
+@mcp.tool()
+def delete_database_field(workspace_id: str, database_id: str, field_id: str) -> str:
+    """Deletes a field/column (Tier 2 / collab — AppFlowy has no REST endpoint for this).
+    Removes it from the schema and from every view's column order. The primary/title
+    field cannot be deleted. Rows keep the now-orphaned cell harmlessly. There is no
+    field trash, so this is irreversible via the API. Returns the deleted field_id."""
+    _require_workspace(workspace_id)
+    doc, root = _open_database(workspace_id, database_id)
+    fields = root["fields"]
+    if field_id not in fields:
+        raise ValueError(f"field {field_id} not found in this database")
+    if "is_primary" in fields[field_id] and fields[field_id]["is_primary"]:
+        raise ValueError("the primary (title) field cannot be deleted")
+    sv = doc.get_state()
+    with doc.transaction():
+        del fields[field_id]
+        views = root["views"]
+        for vid in list(views.keys()):
+            view = views[vid]
+            if "field_orders" in view:
+                orders = view["field_orders"]
+                for i in range(len(orders) - 1, -1, -1):
+                    if orders[i]["id"] == field_id:
+                        del orders[i]
+            # ponytail: also drop the per-view setting; a filter/sort/group that
+            # referenced this field is left for the client to ignore (rare, tolerated).
+            if "field_settings" in view and field_id in view["field_settings"]:
+                del view["field_settings"][field_id]
+    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    return field_id
+
+
+@mcp.tool()
 def append_blocks(workspace_id: str, view_id: str, blocks: str) -> str:
     """Appends blocks to the END of a document (append-only — cannot edit/insert
     mid-document). blocks: JSON array of block objects (same shape as create_page
@@ -615,6 +696,27 @@ def trash_page(workspace_id: str, view_id: str) -> str:
     """Moves a page to trash (reversible in-app; there is no hard delete via REST)."""
     _require_workspace(workspace_id)
     return _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/move-to-trash", {})
+
+
+@mcp.tool()
+def rename_page(workspace_id: str, view_id: str, name: str) -> str:
+    """Renames any page, database/board, or space (by its view_id). To retitle a Kanban
+    CARD, set the row's primary cell via update_row_cells instead — a card is a row,
+    not a page."""
+    _require_workspace(workspace_id)
+    return _post(
+        f"/api/workspace/{workspace_id}/page-view/{view_id}/update-name",
+        {"name": name},
+    )
+
+
+@mcp.tool()
+def restore_page(workspace_id: str, view_id: str) -> str:
+    """Restores a page from trash — the inverse of trash_page."""
+    _require_workspace(workspace_id)
+    return _post(
+        f"/api/workspace/{workspace_id}/page-view/{view_id}/restore-from-trash", {}
+    )
 
 
 @mcp.tool()

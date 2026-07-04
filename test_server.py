@@ -57,6 +57,78 @@ def test_row_document_id_derivation():
     )
 
 
+def test_to_yjs_wraps_nested_json():
+    # pycrdt nodes can only be read once integrated into a doc, which is exactly how
+    # the tool uses _to_yjs (assigned straight into the field). Mirror that here.
+    from pycrdt import Array, Doc, Map
+
+    doc = Doc()
+    m = doc.get("t", type=Map)
+    with doc.transaction():
+        m["v"] = server._to_yjs({"3": {"options": [{"id": "o1", "name": "Open"}]}})
+    to = m["v"]
+    assert isinstance(to, Map) and isinstance(to["3"], Map)
+    assert isinstance(to["3"]["options"], Array)
+    assert to["3"]["options"][0]["name"] == "Open"
+
+
+def _synthetic_db_doc():
+    """A database collab shaped like AppFlowy's: data.database.{fields,views}."""
+    from pycrdt import Array, Doc, Map
+
+    doc = Doc()
+    data = doc.get("data", type=Map)
+    with doc.transaction():
+        data["database"] = Map(
+            {
+                "fields": Map(
+                    {
+                        "F1": Map({"id": "F1", "name": "Title", "is_primary": True}),
+                        "F2": Map({"id": "F2", "name": "Status", "ty": 3}),
+                    }
+                ),
+                "views": Map(
+                    {
+                        "V1": Map(
+                            {
+                                "field_orders": Array(
+                                    [Map({"id": "F1"}), Map({"id": "F2"})]
+                                ),
+                                "field_settings": Map(
+                                    {"F1": Map({"w": 1}), "F2": Map({"w": 2})}
+                                ),
+                            }
+                        )
+                    }
+                ),
+            }
+        )
+    return doc
+
+
+def test_field_update_and_delete_mutate_collab(monkeypatch):
+    # Exercise the real tools against a synthetic doc with the network stubbed out.
+    from pycrdt import Map
+
+    doc = _synthetic_db_doc()
+    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
+    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    root = doc.get("data", type=Map)["database"]
+
+    server.update_database_field("ws-allowed", "db", "F2", name="State")
+    assert root["fields"]["F2"]["name"] == "State"
+
+    server.delete_database_field("ws-allowed", "db", "F2")
+    assert "F2" not in root["fields"]
+    assert [o["id"] for o in list(root["views"]["V1"]["field_orders"])] == ["F1"]
+    assert "F2" not in root["views"]["V1"]["field_settings"]
+
+    with pytest.raises(ValueError):  # primary/title field is protected
+        server.delete_database_field("ws-allowed", "db", "F1")
+    with pytest.raises(ValueError):  # unknown field id
+        server.update_database_field("ws-allowed", "db", "NOPE", name="x")
+
+
 def test_oauth_store_persists_across_instances(tmp_path):
     # Tokens must survive a restart: a fresh provider pointed at the same store
     # file reloads what a prior instance saved (this is what stops re-sign-in).
