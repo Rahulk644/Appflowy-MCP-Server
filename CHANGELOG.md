@@ -21,6 +21,9 @@ All notable changes are documented here. The format loosely follows
   no longer mis-typed.
 
 ### Added
+- **Callouts and math blocks in Markdown.** `> [!NOTE]` / `[!TIP]` / `[!WARNING]` GFM
+  alerts render as AppFlowy callouts and `$$…$$` as block equations — both directions
+  (create and `get_page_markdown`). Adds `mdit-py-plugins` for `$`-math parsing.
 - **Agent guide as an MCP resource** (`appflowy://guide`) — the full operator guide
   (KNOWLEDGE.md) is fetchable in-protocol, so agents pull the deep reference on demand
   instead of inflating tool descriptions.

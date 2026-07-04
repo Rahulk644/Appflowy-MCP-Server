@@ -40,6 +40,7 @@ from markdown_it import MarkdownIt
 from markdown_it.tree import SyntaxTreeNode
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mdit_py_plugins.dollarmath import dollarmath_plugin
 from pycrdt import Array, Doc, Map, Text
 
 # Load environment variables
@@ -80,8 +81,9 @@ by. rename_page renames a page/database/space; restore_page un-trashes a page.
 CONTENT IS MARKDOWN EVERYWHERE. create_page(markdown=...), append_blocks(markdown=...),
 and a row/card `document` all take standard Markdown, rendered into real blocks:
 #/##/### headings, "- "/"1. " lists (nestable), "- [ ]" checkboxes, "> " quote,
-```lang fenced code, "---" divider, images, links, and inline **bold**/*italic*/
-~~strike~~/`code`. Prefer markdown for any prose or card body. READ any page or card
+```lang fenced code, "---" divider, images, links, GFM callouts (> [!NOTE]/[!TIP]/
+[!WARNING]…), $$ math blocks, and inline **bold**/*italic*/~~strike~~/`code`. Prefer
+markdown for any prose or card body. READ any page or card
 body back AS Markdown with get_page_markdown(page_id) — the inverse (page view id or row id).
 
 For blocks Markdown can't express, pass a page_data JSON block tree instead, e.g.
@@ -631,7 +633,19 @@ def list_databases(workspace_id: str) -> list:
 # ponytail: MVP palette — callouts/toggles/columns and tables-as-blocks are
 # roadmap (a GFM table degrades to its plaintext for now).
 
-_md_parser = MarkdownIt("commonmark").enable(["table", "strikethrough"])
+_md_parser = (
+    MarkdownIt("commonmark").enable(["table", "strikethrough"]).use(dollarmath_plugin)
+)
+
+# GFM alert types (> [!NOTE]) <-> AppFlowy callout icons, for round-tripping callouts.
+_ALERT_ICONS = {
+    "note": "📝",
+    "tip": "💡",
+    "important": "❗",
+    "warning": "⚠️",
+    "caution": "🔥",
+}
+_ICON_ALERTS = {v: k for k, v in _ALERT_ICONS.items()}
 
 _INLINE_ATTR = {"strong": "bold", "em": "italic", "s": "strikethrough"}
 _TASK_PREFIXES = {"[ ] ": False, "[x] ": True, "[X] ": True}
@@ -666,6 +680,8 @@ def _inline_delta(node) -> list:
                 alt = c.content or c.attrs.get("alt", "")
                 if alt:
                     ops.append(_delta_op(alt, attrs))
+            elif t == "math_inline":
+                ops.append(_delta_op(f"${c.content}$", attrs))
             elif c.children:
                 walk(c.children, attrs)
             elif c.content:
@@ -733,6 +749,24 @@ def _node_plaintext(node) -> str:
     return "".join(_node_plaintext(c) for c in node.children)
 
 
+def _drop_first_line(delta) -> list:
+    """Remove the first text line (through the first newline) from a delta — strips the
+    "[!NOTE]" marker line off a GFM alert before the rest becomes the callout body."""
+    out, dropping = [], True
+    for op in delta:
+        if not dropping:
+            out.append(op)
+            continue
+        nl = op["insert"].find("\n")
+        if nl == -1:
+            continue  # whole op is on the first line -> drop it
+        dropping = False
+        rest = op["insert"][nl + 1 :]
+        if rest:
+            out.append({**op, "insert": rest})
+    return out
+
+
 def _list_item_block(li, list_type):
     delta, children = [], []
     for c in li.children:
@@ -769,6 +803,8 @@ def _block_from_node(node) -> list:
         return [
             {"type": "code", "data": {"language": lang, "delta": [{"insert": code}]}}
         ]
+    if t == "math_block":
+        return [{"type": "math_equation", "data": {"formula": node.content.strip()}}]
     if t == "blockquote":
         parts = [_delta_of(c) for c in node.children if c.type == "paragraph"]
         delta = []
@@ -776,6 +812,18 @@ def _block_from_node(node) -> list:
             if i:
                 delta.append({"insert": "\n"})
             delta.extend(p)
+        # A GFM alert ("> [!NOTE]") becomes an AppFlowy callout; else a plain quote.
+        lead = delta[0]["insert"] if delta and "attributes" not in delta[0] else ""
+        marker = lead.split("\n", 1)[0].strip().lower()
+        for name, icon in _ALERT_ICONS.items():
+            if marker == f"[!{name}]":
+                body = _drop_first_line(delta)
+                return [
+                    {
+                        "type": "callout",
+                        "data": {"icon": icon, "delta": body or [{"insert": ""}]},
+                    }
+                ]
         return [{"type": "quote", "data": {"delta": delta or [{"insert": ""}]}}]
     if t == "bullet_list":
         return [_list_item_block(li, "bulleted_list") for li in node.children]
@@ -844,6 +892,8 @@ def _render_block(bid, blocks, cmap, tmap, depth):
         lines = ["---"]
     elif ty == "image":
         lines = [f"![]({data.get('url', '')})"]
+    elif ty == "math_equation":
+        lines = ["$$", data.get("formula", ""), "$$"]
     else:
         text = _inline_md(delta)
         if ty == "heading":
@@ -857,6 +907,16 @@ def _render_block(bid, blocks, cmap, tmap, depth):
             lines = [f"{pad}- [{box}] {text}"]
         elif ty == "quote":
             lines = [f"> {text}"]
+        elif ty == "callout":
+            alert = _ICON_ALERTS.get(data.get("icon", ""))
+            head = f"> [!{alert.upper()}]" if alert else "> [!NOTE]"
+            body = text.split("\n") if text else []
+            if not alert and data.get("icon") and body:
+                body[0] = f"{data['icon']} {body[0]}"
+            lines = [head] + [f"> {ln}" for ln in body]
+        elif ty == "toggle_list":  # a level makes it a toggle-heading; no md toggle
+            lvl = data.get("level")
+            lines = ["#" * int(lvl) + " " + text] if lvl else [f"{pad}- {text}"]
         else:  # paragraph, and any unknown block -> plain text (never dropped)
             lines = [text]
 

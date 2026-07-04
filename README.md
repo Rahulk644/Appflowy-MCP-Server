@@ -52,7 +52,7 @@ Here's what this MCP creates **today** — the rest is on the roadmap below.
 | **Text blocks** | Text, Heading 1–3, bulleted / numbered / to-do lists, quote, code, callout, toggle, divider | 🟡 simple table (GFM in Markdown) · 🗺️ link-to-page, breadcrumb |
 | **Media** | Image by URL | 🗺️ file / PDF / video / audio upload, photo gallery, web bookmark, Drive embed |
 | **Database** | Full-page Grid / Board / Calendar, extra views, Board grouping, select options | 🗺️ List / Gallery / Chart / Feed views, inline & linked views |
-| **Advanced** | Inline equation `$…$` | 🗺️ columns, toggle headings, table of contents, block equation, Mermaid |
+| **Advanced** | Callouts (`> [!NOTE]`), block & inline equations (`$$` / `$…$`), toggle-headings (via `add_block`) | 🗺️ columns, table of contents, Mermaid |
 | **Inline style** | Bold / italic / strike / code / link (page bodies **and** in-place edits), color (page bodies), emoji | 🗺️ underline, background color, @mentions, date & reminder |
 | **AI blocks** | — | ⛔ AI note / transcript / summarize / ask — these run AppFlowy's own AI, not insertable content |
 

@@ -469,3 +469,64 @@ def test_replace_text(monkeypatch):
     assert str(tmap["t2"]) == "goodbye earth"
     with pytest.raises(ValueError):  # not found
         server.replace_text("ws-allowed", "page", "zzz", "x")
+
+
+def test_callout_and_math_blocks():
+    blocks = server._md_to_blocks("> [!WARNING]\n> Be careful here.\n\n$$\nE=mc^2\n$$")
+    callout = next(b for b in blocks if b["type"] == "callout")
+    assert callout["data"]["icon"] == "⚠️"
+    assert callout["data"]["delta"] == [{"insert": "Be careful here."}]
+    math = next(b for b in blocks if b["type"] == "math_equation")
+    assert math["data"]["formula"] == "E=mc^2"
+    # inline math survives as literal $...$
+    para = server._md_to_blocks("mass $m$ energy")[0]
+    assert "$m$" in "".join(o["insert"] for o in para["data"]["delta"])
+
+
+def test_doc_to_markdown_callout_math_toggle():
+    from pycrdt import Array, Doc, Map, Text
+
+    doc = Doc()
+    root = doc.get("data", type=Map)
+    with doc.transaction():
+        root["document"] = Map(
+            {
+                "blocks": Map(),
+                "meta": Map({"children_map": Map(), "text_map": Map()}),
+                "page_id": "page",
+            }
+        )
+        d = root["document"]
+        blocks = d["blocks"]
+        tmap = d["meta"]["text_map"]
+        cmap = d["meta"]["children_map"]
+        blocks["page"] = Map({"ty": "page", "children": "pc"})
+        cmap["pc"] = Array(["co", "mq", "tg"])
+        tmap["c"] = Text("Heads up")
+        blocks["co"] = Map(
+            {
+                "ty": "callout",
+                "data": '{"icon":"⚠️"}',
+                "external_id": "c",
+                "children": "cc",
+            }
+        )
+        cmap["cc"] = Array([])
+        blocks["mq"] = Map(
+            {"ty": "math_equation", "data": '{"formula":"a^2+b^2"}', "children": "mc"}
+        )
+        cmap["mc"] = Array([])
+        tmap["t"] = Text("Details")
+        blocks["tg"] = Map(
+            {
+                "ty": "toggle_list",
+                "data": '{"level":3}',
+                "external_id": "t",
+                "children": "tc",
+            }
+        )
+        cmap["tc"] = Array([])
+    md = server._doc_to_markdown(root["document"])
+    assert "> [!WARNING]\n> Heads up" in md
+    assert "$$\na^2+b^2\n$$" in md
+    assert "### Details" in md

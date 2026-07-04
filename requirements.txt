@@ -4,6 +4,7 @@ uvicorn
 httpx
 python-dotenv
 markdown-it-py
+mdit-py-plugins
 # Pinned: pycrdt 0.14.1 regressed collab decoding — it raises "Cannot decode
 # update: while reading, an unexpected value was found" on some AppFlowy *database*
 # collabs (type 1) that 0.13.0 and every earlier version decode fine. That silently

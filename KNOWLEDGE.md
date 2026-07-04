@@ -214,10 +214,10 @@ supported path first, and check the roadmap before assuming a gap is permanent.
 **Advanced blocks**
 | AppFlowy option | MCP | How |
 |---|---|---|
-| Inline equation `$…$` | ✅ | Markdown body |
-| Block equation `$$` | 🟡 | `add_block math_equation` (`data.formula`) — verify before relying |
-| Columns (2–5) | 🗺️ | needs nested `column` children |
-| Toggle heading / Table of contents | 🗺️ | |
+| Callout | ✅ | Markdown `> [!NOTE]` / `[!TIP]` / `[!WARNING]` (GFM alert) |
+| Inline `$…$` / block `$$` equation | ✅ | Markdown |
+| Toggle heading | ✅ | `add_block toggle_list` (`data.level`) |
+| Columns (2–5) / Table of contents | 🗺️ | columns need nested `column` children |
 | Mermaid diagram | 🗺️ | renders as a code block, not a diagram |
 
 **Inline formatting**
