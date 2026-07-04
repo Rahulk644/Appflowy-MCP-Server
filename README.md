@@ -32,11 +32,13 @@ Not just *view* a Kanban board: create databases and pages, move cards, edit and
 
 **Read** — `get_workspaces`, `get_workspace_folder`, `list_databases`, `get_database_fields`, `get_database_row_ids`, `get_database_row_details`, `get_page`, `list_updated_rows`
 
-**Create & structure** (plain JSON, no CRDT) — `create_page`, `create_database` (grid/board/calendar), `create_database_view`, `add_database_field`, `create_database_row`, `upsert_database_row`, `append_blocks`, `create_space`, `move_page`, `duplicate_page`, `trash_page`
+**Create & structure** (plain JSON, no CRDT) — `create_page`, `create_database` (grid/board/calendar), `create_database_view`, `add_database_field`, `create_database_row`, `upsert_database_row`, `append_blocks`, `create_space`, `move_page`, `duplicate_page`, `rename_page`, `trash_page`, `restore_page`
 
-**Edit & delete — any row or block** (collab/CRDT layer) — `update_row_cells` (e.g. move a Kanban card by setting its Status), `delete_row`, `add_block` (incl. advanced: callout / toggle / quote / code…), `edit_block_text`, `delete_block`
+**Edit & delete — any row or block** (collab/CRDT layer) — `update_row_cells` (e.g. move a Board card by setting its Status), `delete_row`, `add_block` (incl. advanced: callout / toggle / quote / code…), `edit_block_text`, `delete_block`
 
-Card/row bodies accept **Markdown**, rendered into real blocks (headings, lists, interactive checkboxes, tables, code, math). Field-type ids, the page block-tree schema, and the full block palette are documented in [KNOWLEDGE.md](KNOWLEDGE.md).
+**Schema editing** (collab/CRDT) — `update_database_field`, `delete_database_field`, `add_select_option`, `delete_select_option`
+
+Row bodies accept **Markdown**, rendered into real blocks (headings, lists, interactive checkboxes, tables, code, math). Field-type ids, the page block-tree schema, and the full block palette are documented in [KNOWLEDGE.md](KNOWLEDGE.md).
 
 ## 🏗️ How it works
 
@@ -130,8 +132,8 @@ CI runs lint, format-check, and tests on every push/PR.
 
 ## 🗺️ Roadmap
 
-- Persistent OAuth token store (survive restarts without re-auth)
-- Scheduled ingestion recipes (e.g. meeting notes → board)
+- Pagination + filtering on large database reads
+- Reorder fields; manage filters, sorts, and Board grouping
 - Richer inline formatting on collab edits
 
 ## 🤝 Contributing

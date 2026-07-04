@@ -163,6 +163,32 @@ def test_select_option_add_and_delete(monkeypatch):
         server.delete_select_option("ws-allowed", "db", "F2", "ghost")
 
 
+def test_api_call_actionable_error(monkeypatch):
+    # A non-2xx from AppFlowy must surface as a specific, agent-readable message
+    # (not a bare traceback), with a hint about what to fix.
+    import httpx
+
+    def handler(_request):
+        return httpx.Response(404, text="object not found")
+
+    real_client = httpx.Client  # capture before patching to avoid recursion
+    monkeypatch.setattr(
+        server.httpx,
+        "Client",
+        lambda **k: real_client(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(
+        server, "get_auth_headers", lambda: {"Authorization": "Bearer x"}
+    )
+
+    with pytest.raises(RuntimeError) as ei:
+        server._api_call("GET", "/api/workspace/x/database/y/fields")
+    msg = str(ei.value)
+    assert "AppFlowy API 404" in msg
+    assert "database_id" in msg  # the 404 hint steers toward list_databases
+    assert "object not found" in msg  # includes the server's own words
+
+
 def test_oauth_store_persists_across_instances(tmp_path):
     # Tokens must survive a restart: a fresh provider pointed at the same store
     # file reloads what a prior instance saved (this is what stops re-sign-in).

@@ -2,7 +2,7 @@
 
 An MCP server over the AppFlowy Cloud REST API. Exposes workspace/folder/database
 reads plus row create + upsert so an AI agent can both see and *finish* work
-(e.g. move a Kanban card by upserting its Status cell).
+(e.g. move a Board card by upserting its Status cell).
 
 Transports:
   * stdio             — run this file directly (local use).
@@ -66,7 +66,7 @@ create_database_view, add_database_field, create_database_row,
 upsert_database_row, create_space, move_page, duplicate_page, trash_page.
 
 EDIT/DELETE ANY ROW (Tier 2 / collab — works even on UI-created rows):
-update_row_cells (change cells on any existing row — e.g. move a Kanban card by
+update_row_cells (change cells on any existing row — e.g. move a Board card by
 setting its Status cell to the target option id), delete_row (hard-delete a row).
 
 EDIT SCHEMA: update_database_field (rename a column) and delete_database_field
@@ -96,19 +96,19 @@ EDIT DOCUMENT BLOCKS (Tier 2 / collab): add_block (any type incl. ADVANCED —
 callout, toggle_list, quote, code, heading; pass block-specific `data`),
 edit_block_text, delete_block. page_id may be a document view id OR a database ROW
 id — a row id auto-resolves to the card's BODY document, so this is how you add a
-checkbox/sub-task to a Kanban card. Put per-card checklists in the card BODY, never
+checkbox/sub-task to a Board card. Put per-card checklists in the card BODY, never
 in a shared column (a column value shows on every card).
 
-BEST PRACTICE: Own cards you create with a deterministic upsert pre_hash so re-runs
-update in place, never duplicate. A meeting follow-up is usually a CONTINUATION of an
-existing task — add it as a checkbox in that card's body, don't spawn a new card.
+BEST PRACTICE: To update a row in place instead of creating a duplicate, upsert with a
+stable pre_hash and reuse that pre_hash on later calls. Keep cells for title/status/
+metadata and put long content or checklists in a row's BODY document, never in a shared
+column (a column value shows on every row).
 
 AVOID: (1) Trusting an immediate re-read — get_database_row_details reads /row/detail,
-a materialized view that LAGS the live data by minutes; a write can be correct even
-when the re-read still shows the old value, so don't conclude it failed. (2) Guessing
-a database_id from a view_id (use list_databases). (3) Duplicate cards for follow-ups
-that continue an existing task. Note: the host may require a human to approve
-board-row DELETES.
+a materialized view that LAGS the live data by up to minutes; a write can be correct even
+when the re-read still shows the old value, so don't conclude it failed. (2) Guessing a
+database_id from a folder view_id (use list_databases). (3) Full-overwriting a document —
+the edit tools send merging updates; never PUT a whole collab.
 
 LIMITS: edited/added text is plain (inline bold/links not applied); multi-column
 layout and @mentions need specific block/data shapes — attempt via add_block. Not in
@@ -160,6 +160,36 @@ mcp = FastMCP(
     transport_security=_transport_security,
     streamable_http_path="/",
 )
+
+# Tool behavior hints for MCP clients (advisory — they help an agent choose safe
+# operations; they are NOT a security boundary). readOnly = performs no writes;
+# destructive = makes an irreversible change; idempotent = repeating with the same
+# args reaches the same state; openWorld = calls the external AppFlowy service (always
+# true here). Presets are applied per tool via @mcp.tool(annotations=...).
+_READ = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
+_CREATE = {
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": False,
+    "openWorldHint": True,
+}
+_WRITE = {
+    "readOnlyHint": False,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
+_DESTRUCTIVE = {
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": True,
+    "openWorldHint": True,
+}
 
 # ---- Optional OAuth (Google-federated) — active only if GOOGLE_CLIENT_ID set --
 OAUTH_ISSUER = os.environ.get("OAUTH_ISSUER", "").rstrip("/")
@@ -255,12 +285,44 @@ def get_auth_headers() -> dict:
     }
 
 
+# Status-code → what the agent should do about it. Surfaced in tool errors so a
+# failed call is self-explanatory instead of a bare stack trace.
+_ERROR_HINTS = {
+    400: "check the ids and the JSON payload shape",
+    401: "the server's AppFlowy login is invalid or expired",
+    403: "the account lacks access to this workspace or resource",
+    404: "verify the id exists — a folder view_id is NOT a database_id (call list_databases)",
+    409: "the resource already exists or was modified concurrently",
+    413: "the payload is too large — split it into smaller writes",
+    429: "rate limited — wait briefly and retry",
+}
+
+
+def _api_call(method: str, path: str, **kwargs) -> httpx.Response:
+    """Authenticated AppFlowy API call with actionable errors. `path` is joined to
+    BASE_URL. Raises RuntimeError with a specific, agent-readable message on failure so a
+    tool error tells the agent how to fix its call rather than dumping a raw traceback."""
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            res = client.request(
+                method, f"{BASE_URL}{path}", headers=get_auth_headers(), **kwargs
+            )
+            res.raise_for_status()
+            return res
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        hint = _ERROR_HINTS.get(code, "unexpected AppFlowy API error")
+        body = " ".join(e.response.text[:200].split())
+        raise RuntimeError(f"AppFlowy API {code}: {hint}. Server said: {body}") from e
+    except httpx.RequestError as e:
+        raise RuntimeError(
+            f"AppFlowy API request did not complete ({type(e).__name__}) — retry shortly"
+        ) from e
+
+
 def _post(path: str, body: dict):
     """POST JSON to the AppFlowy API; return the response's `data` field."""
-    with httpx.Client() as client:
-        res = client.post(f"{BASE_URL}{path}", headers=get_auth_headers(), json=body)
-        res.raise_for_status()
-        return res.json().get("data", "")
+    return _api_call("POST", path, json=body).json().get("data", "")
 
 
 # ---- Collab / CRDT layer (Tier 2): edit/delete any block or row --------------
@@ -272,16 +334,14 @@ def _post(path: str, body: dict):
 
 def _collab_doc(workspace_id: str, object_id: str, collab_type: int) -> Doc:
     """Fetch a collab object and load it into a pycrdt Doc."""
-    with httpx.Client() as client:
-        res = client.get(
-            f"{BASE_URL}/api/workspace/v1/{workspace_id}/collab/{object_id}",
-            headers=get_auth_headers(),
-            params={"collab_type": collab_type},
-        )
-        res.raise_for_status()
-        doc = Doc()
-        doc.apply_update(bytes(res.json()["data"]["doc_state"]))
-        return doc
+    res = _api_call(
+        "GET",
+        f"/api/workspace/v1/{workspace_id}/collab/{object_id}",
+        params={"collab_type": collab_type},
+    )
+    doc = Doc()
+    doc.apply_update(bytes(res.json()["data"]["doc_state"]))
+    return doc
 
 
 def _collab_web_update(
@@ -289,13 +349,11 @@ def _collab_web_update(
 ) -> None:
     """POST the yrs update diff (changes since state_vector) — the server merges it."""
     update = doc.get_update(state_vector)
-    with httpx.Client() as client:
-        res = client.post(
-            f"{BASE_URL}/api/workspace/v1/{workspace_id}/collab/{object_id}/web-update",
-            headers=get_auth_headers(),
-            json={"doc_state": list(update), "collab_type": collab_type},
-        )
-        res.raise_for_status()
+    _api_call(
+        "POST",
+        f"/api/workspace/v1/{workspace_id}/collab/{object_id}/web-update",
+        json={"doc_state": list(update), "collab_type": collab_type},
+    )
 
 
 def _nid(n: int = 10) -> str:
@@ -314,7 +372,7 @@ def _row_document_id(row_id: str) -> str:
 def _open_document(workspace_id: str, page_id: str):
     """Load a document collab for block editing. `page_id` may be the document's own
     view id OR a database row id — a row id is transparently resolved to the row's
-    body document (so agents can edit a Kanban card's checklist by its row id).
+    body document (so agents can edit a Board card's checklist by its row id).
     Returns (doc, object_id, document_map); pass object_id back to _collab_web_update."""
     doc = _collab_doc(workspace_id, page_id, 0)
     root = doc.get("data", type=Map)
@@ -397,64 +455,44 @@ def _write_select(field, tk, data):
     to[tk]["content"] = json.dumps(data, separators=(",", ":"))
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def get_workspaces() -> list:
     """Retrieves your AppFlowy workspaces (filtered to ALLOWED_WORKSPACE_IDS if set)."""
-    headers = get_auth_headers()
-    with httpx.Client() as client:
-        res = client.get(f"{BASE_URL}/api/workspace", headers=headers)
-        res.raise_for_status()
-        data = res.json().get("data", [])
-
+    data = _api_call("GET", "/api/workspace").json().get("data", [])
     allowed = _allowed_workspaces()
     if allowed is not None:
         data = [w for w in data if (w.get("workspace_id") or w.get("id")) in allowed]
     return data
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def get_workspace_folder(workspace_id: str, depth: int = 1) -> dict:
     """
     Fetches the folder structure (pages and databases) of a workspace.
     Useful for finding the database_id to query.
     """
     _require_workspace(workspace_id)
-    headers = get_auth_headers()
-    url = f"{BASE_URL}/api/workspace/{workspace_id}/folder"
-
-    with httpx.Client() as client:
-        res = client.get(url, headers=headers, params={"depth": depth})
-        res.raise_for_status()
-        return res.json().get("data", {})
+    path = f"/api/workspace/{workspace_id}/folder"
+    return _api_call("GET", path, params={"depth": depth}).json().get("data", {})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def get_database_fields(workspace_id: str, database_id: str) -> list:
     """Retrieves the fields/columns available in a database."""
     _require_workspace(workspace_id)
-    headers = get_auth_headers()
-    url = f"{BASE_URL}/api/workspace/{workspace_id}/database/{database_id}/fields"
-
-    with httpx.Client() as client:
-        res = client.get(url, headers=headers)
-        res.raise_for_status()
-        return res.json().get("data", [])
+    path = f"/api/workspace/{workspace_id}/database/{database_id}/fields"
+    return _api_call("GET", path).json().get("data", [])
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def get_database_row_ids(workspace_id: str, database_id: str) -> list:
     """Retrieves the row IDs in a database."""
     _require_workspace(workspace_id)
-    headers = get_auth_headers()
-    url = f"{BASE_URL}/api/workspace/{workspace_id}/database/{database_id}/row"
-
-    with httpx.Client() as client:
-        res = client.get(url, headers=headers)
-        res.raise_for_status()
-        return res.json().get("data", [])
+    path = f"/api/workspace/{workspace_id}/database/{database_id}/row"
+    return _api_call("GET", path).json().get("data", [])
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def get_database_row_details(
     workspace_id: str, database_id: str, row_ids: str, with_doc: bool = False
 ) -> list:
@@ -463,20 +501,14 @@ def get_database_row_details(
     row_ids: comma-separated row UUIDs (e.g. 'uuid1,uuid2').
     """
     _require_workspace(workspace_id)
-    headers = get_auth_headers()
-    url = f"{BASE_URL}/api/workspace/{workspace_id}/database/{database_id}/row/detail"
-
+    path = f"/api/workspace/{workspace_id}/database/{database_id}/row/detail"
     params = {"ids": row_ids}
     if with_doc:
         params["with_doc"] = "true"
-
-    with httpx.Client() as client:
-        res = client.get(url, headers=headers, params=params)
-        res.raise_for_status()
-        return res.json().get("data", [])
+    return _api_call("GET", path, params=params).json().get("data", [])
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def create_database_row(workspace_id: str, database_id: str, row_data: str) -> str:
     """
     Creates a new row in a database.
@@ -484,25 +516,20 @@ def create_database_row(workspace_id: str, database_id: str, row_data: str) -> s
     optional `document` (Markdown). Returns the new row id.
     """
     _require_workspace(workspace_id)
-    headers = get_auth_headers()
-    url = f"{BASE_URL}/api/workspace/{workspace_id}/database/{database_id}/row"
-
     try:
         data = json.loads(row_data)
     except json.JSONDecodeError as exc:
         raise ValueError("row_data must be a valid JSON string") from exc
-
-    with httpx.Client() as client:
-        res = client.post(url, headers=headers, json=data)
-        res.raise_for_status()
-        return res.json().get("data", "")
+    path = f"/api/workspace/{workspace_id}/database/{database_id}/row"
+    return _api_call("POST", path, json=data).json().get("data", "")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def upsert_database_row(workspace_id: str, database_id: str, row_data: str) -> str:
     """
-    Creates or updates (upserts) a row — this is how you MOVE a Kanban card or
-    change a task's status/fields.
+    Creates or updates (upserts) a row — the idempotent way to write. Use it to
+    update a row in place (e.g. move a Board card by setting its Status cell) without
+    creating duplicates on re-runs.
 
     row_data: JSON string with keys:
       * pre_hash (str): identifies the row. Reuse an existing row's pre_hash to
@@ -513,21 +540,15 @@ def upsert_database_row(workspace_id: str, database_id: str, row_data: str) -> s
     Returns the created/updated row id.
     """
     _require_workspace(workspace_id)
-    headers = get_auth_headers()
-    url = f"{BASE_URL}/api/workspace/{workspace_id}/database/{database_id}/row"
-
     try:
         data = json.loads(row_data)
     except json.JSONDecodeError as exc:
         raise ValueError("row_data must be a valid JSON string") from exc
-
-    with httpx.Client() as client:
-        res = client.put(url, headers=headers, json=data)
-        res.raise_for_status()
-        return res.json().get("data", "")
+    path = f"/api/workspace/{workspace_id}/database/{database_id}/row"
+    return _api_call("PUT", path, json=data).json().get("data", "")
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def list_updated_rows(workspace_id: str, database_id: str, after: str = "") -> list:
     """
     Lists rows updated in a database (change feed) — useful for syncing "what
@@ -537,14 +558,9 @@ def list_updated_rows(workspace_id: str, database_id: str, after: str = "") -> l
     # ponytail: `after` semantics come straight from AppFlowy's /row/updated;
     # confirm the exact cursor format against a live workspace before relying on it.
     _require_workspace(workspace_id)
-    headers = get_auth_headers()
-    url = f"{BASE_URL}/api/workspace/{workspace_id}/database/{database_id}/row/updated"
-
+    path = f"/api/workspace/{workspace_id}/database/{database_id}/row/updated"
     params = {"after": after} if after else {}
-    with httpx.Client() as client:
-        res = client.get(url, headers=headers, params=params)
-        res.raise_for_status()
-        return res.json().get("data", [])
+    return _api_call("GET", path, params=params).json().get("data", [])
 
 
 # ---- Structure & document tools (create/manage pages, databases, blocks) ----
@@ -552,21 +568,16 @@ def list_updated_rows(workspace_id: str, database_id: str, after: str = "") -> l
 _DB_LAYOUTS = {"grid": 1, "board": 2, "calendar": 3}
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def list_databases(workspace_id: str) -> list:
     """Lists databases in the workspace with their id and views. Use this to map a
     Board/Grid view to its database_id (a folder view_id is NOT the database_id)."""
     _require_workspace(workspace_id)
-    with httpx.Client() as client:
-        res = client.get(
-            f"{BASE_URL}/api/workspace/{workspace_id}/database",
-            headers=get_auth_headers(),
-        )
-        res.raise_for_status()
-        return res.json().get("data", [])
+    path = f"/api/workspace/{workspace_id}/database"
+    return _api_call("GET", path).json().get("data", [])
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def create_page(
     workspace_id: str, parent_view_id: str, name: str, page_data: str = ""
 ) -> str:
@@ -585,7 +596,7 @@ def create_page(
     return res["view_id"] if isinstance(res, dict) else res
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def create_database(
     workspace_id: str, parent_view_id: str, name: str, layout: str = "grid"
 ) -> str:
@@ -604,7 +615,7 @@ def create_database(
     return res["view_id"] if isinstance(res, dict) else res
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def create_database_view(
     workspace_id: str, view_id: str, layout: str, name: str = ""
 ) -> str:
@@ -621,7 +632,7 @@ def create_database_view(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def add_database_field(
     workspace_id: str,
     database_id: str,
@@ -639,7 +650,7 @@ def add_database_field(
     return _post(f"/api/workspace/{workspace_id}/database/{database_id}/fields", body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def update_database_field(
     workspace_id: str,
     database_id: str,
@@ -674,7 +685,7 @@ def update_database_field(
     return field_id
 
 
-@mcp.tool()
+@mcp.tool(annotations=_DESTRUCTIVE)
 def delete_database_field(workspace_id: str, database_id: str, field_id: str) -> str:
     """Deletes a field/column (Tier 2 / collab — AppFlowy has no REST endpoint for this).
     Removes it from the schema and from every view's column order. The primary/title
@@ -706,7 +717,7 @@ def delete_database_field(workspace_id: str, database_id: str, field_id: str) ->
     return field_id
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def add_select_option(
     workspace_id: str,
     database_id: str,
@@ -746,7 +757,7 @@ def add_select_option(
     return oid
 
 
-@mcp.tool()
+@mcp.tool(annotations=_DESTRUCTIVE)
 def delete_select_option(
     workspace_id: str, database_id: str, field_id: str, option: str
 ) -> str:
@@ -774,7 +785,7 @@ def delete_select_option(
     return match["id"]
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def append_blocks(workspace_id: str, view_id: str, blocks: str) -> str:
     """Appends blocks to the END of a document (append-only — cannot edit/insert
     mid-document). blocks: JSON array of block objects (same shape as create_page
@@ -786,7 +797,7 @@ def append_blocks(workspace_id: str, view_id: str, blocks: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def create_space(workspace_id: str, name: str, is_private: bool = False) -> str:
     """Creates a top-level Space; returns its view_id."""
     _require_workspace(workspace_id)
@@ -801,7 +812,7 @@ def create_space(workspace_id: str, name: str, is_private: bool = False) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def move_page(
     workspace_id: str, view_id: str, new_parent_view_id: str, prev_view_id: str = ""
 ) -> str:
@@ -814,7 +825,7 @@ def move_page(
     return _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/move", body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def duplicate_page(workspace_id: str, view_id: str, suffix: str = "") -> str:
     """Duplicates a page and its subtree."""
     _require_workspace(workspace_id)
@@ -822,14 +833,14 @@ def duplicate_page(workspace_id: str, view_id: str, suffix: str = "") -> str:
     return _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/duplicate", body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def trash_page(workspace_id: str, view_id: str) -> str:
     """Moves a page to trash (reversible in-app; there is no hard delete via REST)."""
     _require_workspace(workspace_id)
     return _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/move-to-trash", {})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def rename_page(workspace_id: str, view_id: str, name: str) -> str:
     """Renames any page, database/board, or space (by its view_id). To retitle a Kanban
     CARD, set the row's primary cell via update_row_cells instead — a card is a row,
@@ -841,7 +852,7 @@ def rename_page(workspace_id: str, view_id: str, name: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def restore_page(workspace_id: str, view_id: str) -> str:
     """Restores a page from trash — the inverse of trash_page."""
     _require_workspace(workspace_id)
@@ -850,20 +861,15 @@ def restore_page(workspace_id: str, view_id: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=_READ)
 def get_page(workspace_id: str, view_id: str) -> dict:
     """Gets a page's metadata (name, icon, layout, ...)."""
     _require_workspace(workspace_id)
-    with httpx.Client() as client:
-        res = client.get(
-            f"{BASE_URL}/api/workspace/{workspace_id}/page-view/{view_id}",
-            headers=get_auth_headers(),
-        )
-        res.raise_for_status()
-        return res.json().get("data", {})
+    path = f"/api/workspace/{workspace_id}/page-view/{view_id}"
+    return _api_call("GET", path).json().get("data", {})
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def update_row_cells(
     workspace_id: str, database_id: str, row_id: str, cells: str
 ) -> str:
@@ -871,7 +877,7 @@ def update_row_cells(
     in the UI (Tier 2 / collab). cells: JSON object {field_id: value}. Values:
     text → string; SingleSelect → the option id (see get_database_fields
     type_option options); Checkbox → "Yes"/"No"; Number/URL → string. Only the
-    given cells change. To move a Kanban card, set its Status field's cell."""
+    given cells change. To move a Board card, set its Status field's cell."""
     _require_workspace(workspace_id)
     updates = json.loads(cells)
     doc = _collab_doc(workspace_id, row_id, 5)
@@ -902,7 +908,7 @@ def update_row_cells(
     return row_id
 
 
-@mcp.tool()
+@mcp.tool(annotations=_DESTRUCTIVE)
 def delete_row(workspace_id: str, database_id: str, row_id: str) -> str:
     """Deletes a row from a database — works for ANY row, including UI-created ones
     (Tier 2 / collab). Removes it from every view's row_orders and deletes the
@@ -921,17 +927,20 @@ def delete_row(workspace_id: str, database_id: str, row_id: str) -> str:
                     removed += 1
     if removed:
         _collab_web_update(workspace_id, database_id, doc, sv, 1)
-    with httpx.Client() as client:
-        client.request(
+    # Best effort: the row is already gone from every view; a failure here only leaves
+    # an orphaned collab object, so don't surface it as a tool error.
+    try:
+        _api_call(
             "DELETE",
-            f"{BASE_URL}/api/workspace/{workspace_id}/collab/{row_id}",
-            headers=get_auth_headers(),
+            f"/api/workspace/{workspace_id}/collab/{row_id}",
             json={"object_id": row_id, "workspace_id": workspace_id, "collab_type": 5},
         )
+    except RuntimeError:
+        pass
     return f"deleted row {row_id} (removed from {removed} view order(s))"
 
 
-@mcp.tool()
+@mcp.tool(annotations=_CREATE)
 def add_block(
     workspace_id: str,
     page_id: str,
@@ -976,7 +985,7 @@ def add_block(
     return bid
 
 
-@mcp.tool()
+@mcp.tool(annotations=_WRITE)
 def edit_block_text(workspace_id: str, page_id: str, block_id: str, text: str) -> str:
     """Replaces the text of an existing document block (plain-text replacement).
     page_id may be a document view id or a database row id (auto-resolved)."""
@@ -1001,7 +1010,7 @@ def edit_block_text(workspace_id: str, page_id: str, block_id: str, text: str) -
     return block_id
 
 
-@mcp.tool()
+@mcp.tool(annotations=_DESTRUCTIVE)
 def delete_block(workspace_id: str, page_id: str, block_id: str) -> str:
     """Deletes a block from a document (removes it from its parent, plus its text
     and children references). page_id may be a document view id or a row id."""

@@ -37,10 +37,19 @@ All notable changes are documented here. The format loosely follows
 
 ### Changed
 - Endpoint auth now accepts a Bearer header, a `?token=` link, or OAuth.
-- Agent knowledge pack (`KNOWLEDGE.md` + shipped `instructions`) rewritten as a full
-  operator's guide: tool-by-task catalog, how-to recipes, best practices, a pitfalls /
-  "what to avoid" section (read-after-write lag, sub-tasks-in-body, …), and a data-model
-  reference.
+- **Tool annotations on every tool** (`readOnlyHint` / `destructiveHint` /
+  `idempotentHint` / `openWorldHint`) so clients and agents can tell reads from writes
+  from irreversible deletes at a glance.
+- **Actionable errors.** All API calls route through one helper that turns a non-2xx into
+  a specific, agent-readable message (status + what to fix + the server's own words)
+  instead of a raw traceback — e.g. a 404 points you at `list_databases`.
+- **General-purpose docs.** Server `instructions` and `KNOWLEDGE.md` rewritten to be
+  domain-neutral (databases / documents / blocks) — recipes, best practices, and the
+  pitfalls section (read-after-write lag, per-row content, id resolution) no longer assume
+  any particular workflow.
+- Agent knowledge pack (`KNOWLEDGE.md` + shipped `instructions`) is a full operator's
+  guide: tool-by-task catalog, how-to recipes, best practices, a pitfalls / "what to
+  avoid" section, and a data-model reference.
 
 ### Security
 - Workspace scoping (`ALLOWED_WORKSPACE_IDS`) enforced on every tool, plus

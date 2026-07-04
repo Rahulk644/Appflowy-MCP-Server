@@ -48,12 +48,12 @@ A row holds content in two distinct places:
 | **Edit a card/doc body** | `add_block`, `edit_block_text`, `delete_block` |
 
 ## 4. Recipes
-**Add a task card** — `create_database_row` (or `upsert_database_row`) with `cells`
+**Add a row** — `create_database_row` (or `upsert_database_row`) with `cells`
 (field id or name → value) and an optional `document` (Markdown body).
 
-**Move a card / change its status** — `update_row_cells(row_id, {"<Status field id>":
-"<option id>"})`. Field id and option ids come from `get_database_fields`. (Or
-`upsert_database_row` with the card's `pre_hash` and the new Status.)
+**Move a Board card / change a select cell** — `update_row_cells(row_id, {"<Status field
+id>": "<option id>"})`. Field id and option ids come from `get_database_fields`. (Or
+`upsert_database_row` with the row's `pre_hash` and the new value.)
 
 **Add a sub-task / checkbox to a card** *(the one people get wrong)* —
 `add_block(page_id=<the card's ROW id>, block_type="todo_list", text="…",
@@ -66,13 +66,13 @@ in the card body — never in a column. Mark it done by rewriting its `data` to
 headings, `-`/`1.` lists, `- [ ]` interactive checkboxes, `>` quote, ```lang fences,
 GFM tables, `---`, links, `$math$`. It renders into real blocks.
 
-**Log a meeting (full record)** — one row in a Meetings/Log database with cells (name,
-date, attendees, link) plus a Markdown `document`: purpose · key takeaways · topics ·
-next steps · action items · recording link.
+**Build a board from scratch** — `create_database(layout="board")` → `add_database_field`
+for a SingleSelect status column → `add_select_option` for each column (e.g. To Do /
+Doing / Done) → `create_database_row` per card, setting the status cell to an option id.
 
-**Fold a follow-up into an existing task** — if a new action item continues an
-existing task, add it as a `todo_list` checkbox in that card's body (recipe above)
-rather than creating a new card.
+**Read a whole database** — `list_databases` (view → `database_id`) → `get_database_fields`
+(field ids + select-option ids) → `get_database_row_ids` → `get_database_row_details`
+(`with_doc=true` to include row bodies).
 
 **Rename or delete a column** — `update_database_field(database_id, field_id, name="…")`
 renames it; `delete_database_field(database_id, field_id)` removes it from the schema and
@@ -93,20 +93,17 @@ cell with `update_row_cells`, not `rename_page`.
 (`with_doc=true` to read bodies), or `list_updated_rows` for a change feed.
 
 ## 5. Best practices (DO)
-- **Own your cards.** Create/update via `upsert_database_row` with a deterministic
-  `pre_hash` (e.g. `fathom-{recording_id}-{slug}`) so re-runs update in place and
-  never duplicate.
-- **Continuations fold in.** A meeting's follow-ups are usually the next step of an
-  existing task — add a checkbox to that card's body; don't spawn a card. One card =
-  one stream of work.
-- **Right place for content.** Cells = title / status / metadata. Body document =
-  context + checklist. Never put a per-card checklist in a shared column.
-- **Full record vs personal board.** A meeting log holds the whole record for
-  everyone; a personal "My Work" board should hold only that person's action items.
-- **Read the org context first.** If a "Company Context" doc exists, read it before
-  creating or triaging work.
-- **Markdown for bodies.** Prefer a Markdown `document` over hand-building a block
-  tree; it's simpler and renders to the same blocks.
+- **Update in place, don't duplicate.** For anything you might write more than once
+  (imports, syncs, re-runs), `upsert_database_row` with a stable `pre_hash` — any
+  deterministic string keyed off the source record — so the same row updates instead of
+  cloning.
+- **Right place for content.** Cells = title / status / metadata. A row's body document =
+  long content + checklists. Never put a per-row checklist in a shared column (it shows on
+  every row).
+- **Resolve ids first.** `list_databases` to turn a folder view into a `database_id`, then
+  `get_database_fields` for field ids and select-option ids before writing cells.
+- **Markdown for bodies.** Prefer a Markdown `document` over hand-building a block tree;
+  it's simpler and renders to the same blocks.
 
 ## 6. Pitfalls — what to AVOID
 - **Don't trust an immediate re-read.** `get_database_row_details` reads AppFlowy's
@@ -114,16 +111,14 @@ cell with `update_row_cells`, not `rename_page`.
   be perfectly correct while an immediate re-read still shows the old value. Verify via
   a collab-backed path (or wait) — never conclude "the write failed" from a fresh
   re-read alone. *(This one cost real debugging time.)*
-- **Don't put sub-tasks in a property column.** A RichText column value shows on
-  *every* card; per-card checklists belong in the card **body**.
+- **Don't put per-row content in a shared column.** A RichText column value shows on
+  *every* row; per-row checklists and notes belong in the row **body** document.
 - **Don't full-overwrite a live document.** Never `PUT` a whole collab; use the
   merging web-update path (the edit tools already do). A full overwrite clobbers
   concurrent edits.
-- **Don't duplicate.** Don't create a new card for a follow-up that continues an
-  existing task; fold it in.
+- **Don't duplicate on re-runs.** Re-importing or re-syncing? `upsert_database_row` with
+  a stable `pre_hash` instead of creating new rows each time.
 - **Don't guess a `database_id`** from a folder `view_id` — call `list_databases`.
-- **Deletes may need a human.** The host environment may require a person to approve
-  deleting board rows. If a delete is refused, surface it — don't retry in a loop.
 
 ## 7. Data model (internals, for advanced work)
 - **Collab types:** `0` Document, `1` Database, `5` DatabaseRow.
