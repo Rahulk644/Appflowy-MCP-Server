@@ -399,6 +399,24 @@ def _to_yjs(v):
     return v
 
 
+def _field_types(workspace_id: str, database_id: str) -> dict:
+    """Map field_id -> numeric field type. Prefer the DB collab (authoritative, no
+    lag); a new cell must be tagged with the right type or the write appears to silently
+    drop. Fall back to the REST fields view (which lags for just-created fields) only if
+    the collab can't be read."""
+    try:
+        _, root = _open_database(workspace_id, database_id)
+        fields = root["fields"]
+        return {
+            fid: int(fields[fid]["ty"]) for fid in fields.keys() if "ty" in fields[fid]
+        }
+    except Exception:
+        return {
+            f["id"]: int(f.get("field_type_id", 0))
+            for f in get_database_fields(workspace_id, database_id)
+        }
+
+
 # Select fields store their whole SelectTypeOption as a JSON STRING under
 # type_option["<field_type>"]["content"] = {"options":[{id,name,color}], "disable_color"}.
 # color must be one of these exact names — an invalid value makes AppFlowy's
@@ -869,6 +887,12 @@ def get_page(workspace_id: str, view_id: str) -> dict:
     return _api_call("GET", path).json().get("data", {})
 
 
+# Concurrent collab edits can transiently lose a write, so update_row_cells confirms
+# the cells landed (fresh authoritative collab read) and retries — success means it stuck.
+_CELL_WRITE_RETRIES = 4
+_CELL_WRITE_BACKOFF = 0.4  # seconds, multiplied by the (1-based) attempt number
+
+
 @mcp.tool(annotations=_WRITE)
 def update_row_cells(
     workspace_id: str, database_id: str, row_id: str, cells: str
@@ -877,35 +901,59 @@ def update_row_cells(
     in the UI (Tier 2 / collab). cells: JSON object {field_id: value}. Values:
     text → string; SingleSelect → the option id (see get_database_fields
     type_option options); Checkbox → "Yes"/"No"; Number/URL → string. Only the
-    given cells change. To move a Board card, set its Status field's cell."""
+    given cells change. To move a Board card, set its Status field's cell.
+    Confirms the write applied (read-after-write) before returning and retries on
+    transient collab contention, so a success result means the cells actually stuck."""
     _require_workspace(workspace_id)
     updates = json.loads(cells)
-    doc = _collab_doc(workspace_id, row_id, 5)
-    row_cells = doc.get("data", type=Map)["data"]["cells"]
-    ftypes = {}
-    if any(fid not in row_cells for fid in updates):
-        ftypes = {
-            f["id"]: f.get("field_type_id", 0)
-            for f in get_database_fields(workspace_id, database_id)
-        }
-    sv = doc.get_state()
-    now = int(time.time())
-    with doc.transaction():
+
+    def confirmed(vcells) -> bool:
         for fid, val in updates.items():
-            if fid in row_cells:
-                row_cells[fid]["data"] = val
-                row_cells[fid]["last_modified"] = now
-            else:
-                row_cells[fid] = Map(
-                    {
-                        "data": val,
-                        "field_type": int(ftypes.get(fid, 0)),
-                        "created_at": now,
-                        "last_modified": now,
-                    }
-                )
-    _collab_web_update(workspace_id, row_id, doc, sv, 5)
-    return row_id
+            if fid not in vcells or "data" not in vcells[fid]:
+                return False
+            if str(vcells[fid]["data"]) != str(val):
+                return False
+        return True
+
+    ftypes = None  # field types for NEW cells — loaded once, only if needed
+    last = "no attempt made"
+    for attempt in range(_CELL_WRITE_RETRIES):
+        doc = _collab_doc(workspace_id, row_id, 5)
+        row_cells = doc.get("data", type=Map)["data"]["cells"]
+        if ftypes is None and any(fid not in row_cells for fid in updates):
+            ftypes = _field_types(workspace_id, database_id)
+        sv = doc.get_state()
+        now = int(time.time())
+        with doc.transaction():
+            for fid, val in updates.items():
+                if fid in row_cells:
+                    row_cells[fid]["data"] = val
+                    row_cells[fid]["last_modified"] = now
+                else:
+                    row_cells[fid] = Map(
+                        {
+                            "data": val,
+                            "field_type": int((ftypes or {}).get(fid, 0)),
+                            "created_at": now,
+                            "last_modified": now,
+                        }
+                    )
+        try:
+            _collab_web_update(workspace_id, row_id, doc, sv, 5)
+            after = _collab_doc(workspace_id, row_id, 5).get("data", type=Map)["data"][
+                "cells"
+            ]
+            if confirmed(after):
+                return row_id
+            last = "cells did not reflect the write on read-back"
+        except RuntimeError as e:
+            last = str(e)
+        if attempt + 1 < _CELL_WRITE_RETRIES:
+            time.sleep(_CELL_WRITE_BACKOFF * (attempt + 1))
+    raise RuntimeError(
+        f"update_row_cells: write to row {row_id} did not confirm after "
+        f"{_CELL_WRITE_RETRIES} attempts ({last})"
+    )
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)

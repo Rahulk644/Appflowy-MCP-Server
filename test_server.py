@@ -163,6 +163,54 @@ def test_select_option_add_and_delete(monkeypatch):
         server.delete_select_option("ws-allowed", "db", "F2", "ghost")
 
 
+def _synthetic_row_doc(data0="old"):
+    from pycrdt import Doc, Map
+
+    doc = Doc()
+    root = doc.get("data", type=Map)
+    with doc.transaction():
+        root["data"] = Map(
+            {"cells": Map({"F1": Map({"data": data0, "field_type": 0})})}
+        )
+    return doc
+
+
+def test_update_row_cells_confirms_and_creates_new_cell(monkeypatch):
+    from pycrdt import Map
+
+    doc = _synthetic_row_doc()
+    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
+    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_field_types", lambda ws, db: {"F2": 3})
+    monkeypatch.setattr(server.time, "sleep", lambda *_: None)
+
+    out = server.update_row_cells(
+        "ws-allowed", "db", "row1", '{"F1": "new", "F2": "opt1"}'
+    )
+    assert out == "row1"
+    cells = doc.get("data", type=Map)["data"]["cells"]
+    assert cells["F1"]["data"] == "new"
+    # a brand-new cell is tagged with the type from _field_types (the collab), not 0
+    assert cells["F2"]["data"] == "opt1" and cells["F2"]["field_type"] == 3
+
+
+def test_update_row_cells_raises_when_write_never_confirms(monkeypatch):
+    from pycrdt import Map
+
+    doc = _synthetic_row_doc()
+    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
+
+    def revert(*a, **k):  # simulate a write that doesn't actually stick
+        with doc.transaction():
+            doc.get("data", type=Map)["data"]["cells"]["F1"]["data"] = "old"
+
+    monkeypatch.setattr(server, "_collab_web_update", revert)
+    monkeypatch.setattr(server.time, "sleep", lambda *_: None)
+
+    with pytest.raises(RuntimeError, match="did not confirm"):
+        server.update_row_cells("ws-allowed", "db", "row1", '{"F1": "new"}')
+
+
 def test_api_call_actionable_error(monkeypatch):
     # A non-2xx from AppFlowy must surface as a specific, agent-readable message
     # (not a bare traceback), with a hint about what to fix.

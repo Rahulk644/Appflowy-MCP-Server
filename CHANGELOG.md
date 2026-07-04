@@ -6,6 +6,20 @@ All notable changes are documented here. The format loosely follows
 
 ## [Unreleased]
 
+### Fixed
+- **Pinned `pycrdt==0.13.0`.** 0.14.1 regressed collab decoding — it raised
+  `Cannot decode update: while reading, an unexpected value was found` on some
+  AppFlowy *database* collabs, which silently broke every Tier-2 structural op
+  (`delete_row`, `update_database_field`, `delete_database_field`,
+  `add_/delete_select_option`) on affected boards while row-collab cell writes kept
+  working. Every pre-0.14 version (and the deployed build) decodes those collabs fine.
+- **`update_row_cells` now confirms the write.** It reads the cells back from the
+  authoritative collab and retries on transient contention before returning, so a
+  success result means the change actually stuck (previously a racing/parallel write
+  could report success without landing). New cells also take their field type from the
+  DB collab instead of the lagging fields view, so a write to a just-created field is
+  no longer mis-typed.
+
 ### Added
 - **Collab/CRDT layer** (via `pycrdt`): `update_row_cells`, `delete_row`,
   `add_block`, `edit_block_text`, `delete_block` — edit, move, and delete *any*
