@@ -401,3 +401,65 @@ def test_doc_to_markdown_renders_blocks():
     assert "- sibling" in md
     assert "- [x] done" in md
     assert "```py\nx=1\ny=2\n```" in md
+
+
+def test_md_inline_and_set_text():
+    from pycrdt import Doc, Map, Text
+
+    delta = server._md_inline_to_delta("a **b** ~~c~~ [x](http://u) `k`")
+    assert {"insert": "b", "attributes": {"bold": True}} in delta
+    assert {"insert": "c", "attributes": {"strikethrough": True}} in delta
+    assert {"insert": "k", "attributes": {"code": True}} in delta
+    assert any(o.get("attributes", {}).get("href") == "http://u" for o in delta)
+
+    doc = Doc()
+    m = doc.get("t", type=Map)
+    with doc.transaction():
+        m["x"] = Text("stale")
+        server._set_text(m["x"], delta)  # overwrites, applies formatting ranges
+    diff = m["x"].diff()
+    assert "".join(seg for seg, _ in diff) == "a b c x k"
+    assert ("b", {"bold": True}) in diff
+    assert ("k", {"code": True}) in diff
+
+
+def test_replace_text(monkeypatch):
+    from pycrdt import Array, Doc, Map, Text
+
+    doc = Doc()
+    root = doc.get("data", type=Map)
+    with doc.transaction():
+        root["document"] = Map(
+            {
+                "blocks": Map(),
+                "meta": Map({"children_map": Map(), "text_map": Map()}),
+                "page_id": "page",
+            }
+        )
+        d = root["document"]
+        blocks = d["blocks"]
+        tmap = d["meta"]["text_map"]
+        cmap = d["meta"]["children_map"]
+        blocks["page"] = Map({"ty": "page", "children": "pc"})
+        cmap["pc"] = Array(["p1", "p2"])
+        tmap["t1"] = Text("hello world")
+        blocks["p1"] = Map({"ty": "paragraph", "children": "c1", "external_id": "t1"})
+        cmap["c1"] = Array([])
+        tmap["t2"] = Text("goodbye world")
+        blocks["p2"] = Map({"ty": "paragraph", "children": "c2", "external_id": "t2"})
+        cmap["c2"] = Array([])
+
+    monkeypatch.setattr(
+        server, "_open_document", lambda ws, pid: (doc, pid, root["document"])
+    )
+    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+
+    server.replace_text("ws-allowed", "page", "hello", "hi")
+    assert str(tmap["t1"]) == "hi world"
+    with pytest.raises(ValueError):  # "world" is in two blocks
+        server.replace_text("ws-allowed", "page", "world", "earth")
+    server.replace_text("ws-allowed", "page", "world", "earth", replace_all=True)
+    assert str(tmap["t1"]) == "hi earth"
+    assert str(tmap["t2"]) == "goodbye earth"
+    with pytest.raises(ValueError):  # not found
+        server.replace_text("ws-allowed", "page", "zzz", "x")

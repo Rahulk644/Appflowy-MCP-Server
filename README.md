@@ -34,7 +34,7 @@ Not just *view* a Kanban board: create databases and pages, move cards, edit and
 
 **Create & structure** (plain JSON, no CRDT) — `create_page`, `create_database` (grid/board/calendar), `create_database_view`, `add_database_field`, `create_database_row`, `upsert_database_row`, `append_blocks`, `create_space`, `move_page`, `duplicate_page`, `rename_page`, `trash_page`, `restore_page`
 
-**Edit & delete — any row or block** (collab/CRDT layer) — `update_row_cells` (e.g. move a Board card by setting its Status), `delete_row`, `add_block` (incl. advanced: callout / toggle / quote / code…), `edit_block_text`, `delete_block`
+**Edit & delete — any row or block** (collab/CRDT layer) — `update_row_cells` (e.g. move a Board card by setting its Status), `delete_row`, `add_block` (incl. advanced: callout / toggle / quote / code…), `edit_block_text` (renders inline Markdown), `replace_text` (find-and-replace, no block id), `delete_block`
 
 **Schema editing** (collab/CRDT) — `update_database_field`, `delete_database_field`, `add_select_option`, `delete_select_option`, `set_group_by` (Board grouping)
 
@@ -53,7 +53,7 @@ Here's what this MCP creates **today** — the rest is on the roadmap below.
 | **Media** | Image by URL | 🗺️ file / PDF / video / audio upload, photo gallery, web bookmark, Drive embed |
 | **Database** | Full-page Grid / Board / Calendar, extra views, Board grouping, select options | 🗺️ List / Gallery / Chart / Feed views, inline & linked views |
 | **Advanced** | Inline equation `$…$` | 🗺️ columns, toggle headings, table of contents, block equation, Mermaid |
-| **Inline style** | Bold / italic / underline / strike / code / link / color (in page bodies), emoji | 🟡 plain text on in-place edits · 🗺️ @mentions, background color, date & reminder |
+| **Inline style** | Bold / italic / strike / code / link (page bodies **and** in-place edits), color (page bodies), emoji | 🗺️ underline, background color, @mentions, date & reminder |
 | **AI blocks** | — | ⛔ AI note / transcript / summarize / ask — these run AppFlowy's own AI, not insertable content |
 
 Block-by-block detail lives in [KNOWLEDGE.md](KNOWLEDGE.md) (§9 Coverage).

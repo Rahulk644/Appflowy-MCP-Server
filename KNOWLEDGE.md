@@ -47,7 +47,7 @@ A row holds content in two distinct places:
 | **Rename a page / database / space** | `rename_page` |
 | **Change a row's cells / move a card** | `update_row_cells` |
 | **Delete a row** | `delete_row` |
-| **Edit a card/doc body** | `add_block`, `edit_block_text`, `delete_block` |
+| **Edit a card/doc body** | `add_block`, `edit_block_text`, `replace_text`, `delete_block` |
 
 ## 4. Recipes
 **Add a row** — `create_database_row` (or `upsert_database_row`) with `cells`
@@ -170,8 +170,9 @@ todo_list (data.checked), quote, divider, image (data.url)`. Delta attributes:
 `bold, italic, underline, strikethrough, code, color, href`. Advanced blocks
 (callout, toggle_list, code) are placed via `add_block` with the matching `data`.
 
-**Nuances:** collab-edited/added text is plain (inline bold / links / color not
-applied yet). See **§9 Coverage** for the full AppFlowy-vs-MCP support matrix.
+**Nuances:** in-place edits (`add_block`/`edit_block_text`) render inline Markdown
+(bold/italic/strike/code/links); text color and underline are not applied. See
+**§9 Coverage** for the full AppFlowy-vs-MCP support matrix.
 
 ## 9. Coverage: AppFlowy vs. this MCP
 What AppFlowy's editor/API can do, and what this MCP can create today. Reach for a
@@ -222,7 +223,7 @@ supported path first, and check the roadmap before assuming a gap is permanent.
 **Inline formatting**
 | AppFlowy option | MCP | How |
 |---|---|---|
-| Bold / italic / underline / strike / code / link | ✅ page bodies · 🟡 in-place edits | `page_data` delta or Markdown; `add_block`/`edit_block_text` write plain text |
+| Bold / italic / strike / code / link | ✅ page bodies **and** in-place edits | Markdown or `page_data` delta; `add_block` / `edit_block_text` / `replace_text` |
 | Text color | ✅ | `page_data` delta `color` attr |
 | Background color | 🗺️ | |
 | @mention a person / page | 🗺️ | inline mention delta — foundation for agents-as-members |

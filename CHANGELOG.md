@@ -31,6 +31,11 @@ All notable changes are documented here. The format loosely follows
 - **Read pages as Markdown.** `get_page_markdown` returns a Document page — or a
   database row's body — as Markdown (the inverse of `create_page(markdown=...)`), so
   agents read and write the same format (symmetric with Notion's `fetch`).
+- **Rich inline formatting on in-place edits.** `add_block` and `edit_block_text` now
+  render inline Markdown (bold / italic / strikethrough / code / links) into a block's
+  text instead of writing it plain; code and equation blocks stay literal.
+- **`replace_text`** — content-addressed find-and-replace across a document's blocks
+  (no block ids), the counterpart to Notion's `update_content`.
 - **Collab/CRDT layer** (via `pycrdt`): `update_row_cells`, `delete_row`,
   `add_block`, `edit_block_text`, `delete_block` — edit, move, and delete *any*
   existing row or document block (including UI-created ones), and place advanced

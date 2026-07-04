@@ -98,7 +98,8 @@ FIELD TYPES (add_database_field): 0=RichText 1=Number 2=DateTime 3=SingleSelect
 
 EDIT DOCUMENT BLOCKS (Tier 2 / collab): add_block (any type incl. ADVANCED —
 callout, toggle_list, quote, code, heading; pass block-specific `data`),
-edit_block_text, delete_block. page_id may be a document view id OR a database ROW
+edit_block_text (both render inline **Markdown**: bold/italic/code/strike/links),
+replace_text (find-and-replace by content — NO block id needed), delete_block. page_id may be a document view id OR a database ROW
 id — a row id auto-resolves to the card's BODY document, so this is how you add a
 checkbox/sub-task to a Board card. Put per-card checklists in the card BODY, never
 in a shared column (a column value shows on every card).
@@ -114,8 +115,8 @@ when the re-read still shows the old value, so don't conclude it failed. (2) Gue
 database_id from a folder view_id (use list_databases). (3) Full-overwriting a document —
 the edit tools send merging updates; never PUT a whole collab.
 
-LIMITS: in-place edits (add_block/edit_block_text) write PLAIN text (no inline
-bold/links/color yet). NOT SUPPORTED YET (roadmap — see KNOWLEDGE.md §9 Coverage):
+LIMITS: in-place edits render inline Markdown (bold/italic/code/strike/links) but not
+text color or underline. NOT SUPPORTED YET (roadmap — see KNOWLEDGE.md §9 Coverage):
 columns, toggle headings, table of contents, @mentions, link-to-page, web-bookmark,
 Drive/iframe embed, file/video/audio upload, List/Gallery/Chart/Feed views, and inline
 or linked database views. AI blocks (AI note/summarize/ask) run AppFlowy's own AI and
@@ -868,6 +869,38 @@ def _doc_to_markdown(document) -> str:
     return "".join(parts).strip() + "\n"
 
 
+# Code / equation blocks hold literal text; everything else renders inline Markdown.
+_PLAIN_TEXT_TYS = {"code", "math_equation"}
+
+
+def _md_inline_to_delta(text: str) -> list:
+    """Parse one line of inline Markdown (**bold**, *italic*, `code`, ~~strike~~,
+    [links](url)) into an AppFlowy delta; literal fallback for non-inline input."""
+    if not text:
+        return []
+    blocks = _md_to_blocks(text)
+    if len(blocks) == 1 and blocks[0]["type"] == "paragraph":
+        return blocks[0]["data"]["delta"]
+    return [{"insert": text}]
+
+
+def _set_text(text_obj, delta) -> None:
+    """Overwrite a yjs Text from a delta: plain content, then inline formatting ranges
+    (bold/italic/strikethrough/code/href) via Text.format(start, stop)."""
+    if len(text_obj) > 0:
+        del text_obj[0 : len(text_obj)]
+    plain = "".join(op["insert"] for op in delta)
+    if plain:
+        text_obj.insert(0, plain)
+    pos = 0
+    for op in delta:
+        n = len(op["insert"])
+        attrs = op.get("attributes")
+        if attrs and n:
+            text_obj.format(pos, pos + n, attrs)
+        pos += n
+
+
 @mcp.tool(annotations=_CREATE)
 def create_page(
     workspace_id: str,
@@ -1355,7 +1388,8 @@ def add_block(
     data (optional): JSON of block-specific data, e.g. {"level":2} heading,
     {"icon":"💡"} callout, {"checked":false} todo_list, {"language":"rust"} code.
     page_id = a document's view id, OR a database row id — a row id is auto-resolved
-    to the row's body document (this is how you add a checkbox/sub-task to a card)."""
+    to the row's body document (this is how you add a checkbox/sub-task to a card).
+    `text` renders inline Markdown (bold/italic/code/strike/links); code/math is literal."""
     _require_workspace(workspace_id)
     doc, page_id, d = _open_document(workspace_id, page_id)
     blocks, meta = d["blocks"], d["meta"]
@@ -1377,7 +1411,11 @@ def add_block(
             ext = _nid()
             block["external_id"] = ext
             block["external_type"] = "text"
-            tmap[ext] = Text(text)
+            tmap[ext] = Text("")
+            if block_type in _PLAIN_TEXT_TYS:
+                _set_text(tmap[ext], [{"insert": text}])
+            else:
+                _set_text(tmap[ext], _md_inline_to_delta(text))
         blocks[bid] = Map(block)
         cmap[parent_children_key].append(bid)
     _collab_web_update(workspace_id, page_id, doc, sv, 0)
@@ -1386,27 +1424,74 @@ def add_block(
 
 @mcp.tool(annotations=_WRITE)
 def edit_block_text(workspace_id: str, page_id: str, block_id: str, text: str) -> str:
-    """Replaces the text of an existing document block (plain-text replacement).
-    page_id may be a document view id or a database row id (auto-resolved)."""
+    """Replaces the text of an existing document block. `text` renders inline Markdown
+    (**bold**, *italic*, `code`, ~~strike~~, [links](url)); code/math blocks keep it
+    literal. page_id may be a document view id or a database row id (auto-resolved)."""
     _require_workspace(workspace_id)
     doc, page_id, d = _open_document(workspace_id, page_id)
     block = d["blocks"][block_id]
     tmap = d["meta"]["text_map"]
     ext = block["external_id"] if "external_id" in block else None
+    ty = block["ty"] if "ty" in block else ""
+    delta = [{"insert": text}] if ty in _PLAIN_TEXT_TYS else _md_inline_to_delta(text)
     sv = doc.get_state()
     with doc.transaction():
-        if ext and ext in tmap:
-            t = tmap[ext]
-            if len(t) > 0:
-                del t[0 : len(t)]
-            t.insert(0, text)
-        else:
+        if not (ext and ext in tmap):
             ext = _nid()
             block["external_id"] = ext
             block["external_type"] = "text"
-            tmap[ext] = Text(text)
+            tmap[ext] = Text("")
+        _set_text(tmap[ext], delta)
     _collab_web_update(workspace_id, page_id, doc, sv, 0)
     return block_id
+
+
+@mcp.tool(annotations=_WRITE)
+def replace_text(
+    workspace_id: str,
+    page_id: str,
+    find: str,
+    replace: str = "",
+    replace_all: bool = False,
+) -> str:
+    """Find-and-replace text in a document WITHOUT needing block ids — the
+    content-addressed edit (like Notion's update_content). Every occurrence of `find`
+    within a block's text becomes `replace` (plain text). page_id may be a document
+    view id or a database row id (card body). By default errors if `find` appears in
+    more than one block; set replace_all=true to change all of them. Returns how many
+    blocks changed."""
+    _require_workspace(workspace_id)
+    if not find:
+        raise ValueError("`find` must be non-empty")
+    doc, page_id, d = _open_document(workspace_id, page_id)
+    blocks, tmap = d["blocks"], d["meta"]["text_map"]
+    hits = []
+    for bid in blocks:
+        b = blocks[bid]
+        ext = b["external_id"] if "external_id" in b else None
+        if ext is not None and ext in tmap and find in str(tmap[ext]):
+            hits.append(ext)
+    if not hits:
+        raise ValueError(f"`find` text not found: {find!r}")
+    if len(hits) > 1 and not replace_all:
+        raise ValueError(
+            f"`find` matches {len(hits)} blocks — narrow it or set replace_all=true"
+        )
+    sv = doc.get_state()
+    with doc.transaction():
+        for ext in hits:
+            t = tmap[ext]
+            s = str(t)
+            starts, i = [], s.find(find)
+            while i != -1:
+                starts.append(i)
+                i = s.find(find, i + len(find))
+            for i in reversed(starts):
+                del t[i : i + len(find)]
+                if replace:
+                    t.insert(i, replace)
+    _collab_web_update(workspace_id, page_id, doc, sv, 0)
+    return f"replaced in {len(hits)} block(s)"
 
 
 @mcp.tool(annotations=_DESTRUCTIVE)
