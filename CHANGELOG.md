@@ -21,6 +21,9 @@ All notable changes are documented here. The format loosely follows
   no longer mis-typed.
 
 ### Added
+- **Agent guide as an MCP resource** (`appflowy://guide`) — the full operator guide
+  (KNOWLEDGE.md) is fetchable in-protocol, so agents pull the deep reference on demand
+  instead of inflating tool descriptions.
 - **Markdown for pages.** `create_page` and `append_blocks` now take a `markdown=`
   argument — standard Markdown (headings; nested bulleted / numbered / `- [ ]` task
   lists; quotes; fenced code with language; dividers; images; and inline

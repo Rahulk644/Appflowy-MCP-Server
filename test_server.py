@@ -13,6 +13,12 @@ import server  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
+def test_agent_guide_resource():
+    # The full guide is served as an MCP resource; the file must resolve + load.
+    guide = server._agent_guide_md()
+    assert "AppFlowy Agent Guide" in guide and "Coverage" in guide
+
+
 def test_workspace_guard_blocks_other_workspaces():
     server._require_workspace("ws-allowed")  # allowed -> no raise
     with pytest.raises(ValueError):

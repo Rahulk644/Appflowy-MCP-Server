@@ -120,7 +120,8 @@ text color or underline. NOT SUPPORTED YET (roadmap — see KNOWLEDGE.md §9 Cov
 columns, toggle headings, table of contents, @mentions, link-to-page, web-bookmark,
 Drive/iframe embed, file/video/audio upload, List/Gallery/Chart/Feed views, and inline
 or linked database views. AI blocks (AI note/summarize/ask) run AppFlowy's own AI and
-aren't insertable content. Full guide + coverage matrix: KNOWLEDGE.md.
+aren't insertable content. Full guide + coverage matrix: MCP resource appflowy://guide
+(also KNOWLEDGE.md in the repo).
 """
 
 # Server logo (three kanban columns on AppFlowy purple). Declared in the MCP
@@ -167,6 +168,24 @@ mcp = FastMCP(
     transport_security=_transport_security,
     streamable_http_path="/",
 )
+
+
+# Full operator guide (KNOWLEDGE.md) exposed as an MCP resource, so an agent can pull
+# the deep reference — tools-by-task, recipes, pitfalls, coverage matrix, data model —
+# on demand instead of it bloating every tool description (keeps the tool surface lean).
+def _agent_guide_md() -> str:
+    return (Path(__file__).parent / "KNOWLEDGE.md").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    "appflowy://guide",
+    name="AppFlowy Agent Guide",
+    description="Operator guide: tools-by-task, recipes, pitfalls, coverage matrix, data model.",
+    mime_type="text/markdown",
+)
+def agent_guide() -> str:
+    return _agent_guide_md()
+
 
 # Tool behavior hints for MCP clients (advisory — they help an agent choose safe
 # operations; they are NOT a security boundary). readOnly = performs no writes;

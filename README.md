@@ -25,7 +25,7 @@ Not just *view* a Kanban board: create databases and pages, move cards, edit and
 - **Advanced blocks the REST API can't make.** Callouts, toggles, quotes, code, columns, and more, placed programmatically.
 - **Scoped by design.** `ALLOWED_WORKSPACE_IDS` makes every tool refuse anything outside your allow-list — even if the account can see more.
 - **Three ways to connect.** Google **OAuth sign-in**, a Bearer **header** token, or a token-in-**URL link** for UIs that can't set headers. Works with Claude, Cursor, Antigravity, and any MCP client.
-- **Agent-ready.** Ships an AppFlowy "knowledge pack" as MCP server instructions (see [KNOWLEDGE.md](KNOWLEDGE.md)) so agents build clean, well-formed structures.
+- **Agent-ready.** Ships an AppFlowy "knowledge pack" as MCP server instructions **and a fetchable `appflowy://guide` resource** (see [KNOWLEDGE.md](KNOWLEDGE.md)) so agents build clean, well-formed structures.
 - **Batteries included.** stdio / Streamable-HTTP / SSE transports, Docker, tests, and CI.
 
 ## 🧰 Tools
