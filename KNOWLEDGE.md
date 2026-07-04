@@ -35,6 +35,7 @@ A row holds content in two distinct places:
 | Map a view → its database | `list_databases` |
 | Read a database's columns | `get_database_fields` |
 | Read rows | `get_database_row_ids`, `get_database_row_details` (`with_doc=true` for bodies) |
+| **Read a page / card body as Markdown** | `get_page_markdown` |
 | See what changed | `list_updated_rows` |
 | New doc / database / view / field | `create_page`, `create_database`, `create_database_view`, `add_database_field` |
 | **Rename / delete a column** | `update_database_field`, `delete_database_field` |

@@ -30,7 +30,7 @@ Not just *view* a Kanban board: create databases and pages, move cards, edit and
 
 ## 🧰 Tools
 
-**Read** — `get_workspaces`, `get_workspace_folder`, `list_databases`, `get_database_fields`, `get_database_row_ids`, `get_database_row_details`, `get_page`, `list_updated_rows`
+**Read** — `get_workspaces`, `get_workspace_folder`, `list_databases`, `get_database_fields`, `get_database_row_ids`, `get_database_row_details`, `get_page`, `get_page_markdown` (page/card body as Markdown), `list_updated_rows`
 
 **Create & structure** (plain JSON, no CRDT) — `create_page`, `create_database` (grid/board/calendar), `create_database_view`, `add_database_field`, `create_database_row`, `upsert_database_row`, `append_blocks`, `create_space`, `move_page`, `duplicate_page`, `rename_page`, `trash_page`, `restore_page`
 

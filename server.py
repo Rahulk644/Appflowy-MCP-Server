@@ -81,7 +81,8 @@ CONTENT IS MARKDOWN EVERYWHERE. create_page(markdown=...), append_blocks(markdow
 and a row/card `document` all take standard Markdown, rendered into real blocks:
 #/##/### headings, "- "/"1. " lists (nestable), "- [ ]" checkboxes, "> " quote,
 ```lang fenced code, "---" divider, images, links, and inline **bold**/*italic*/
-~~strike~~/`code`. Prefer markdown for any prose or card body.
+~~strike~~/`code`. Prefer markdown for any prose or card body. READ any page or card
+body back AS Markdown with get_page_markdown(page_id) — the inverse (page view id or row id).
 
 For blocks Markdown can't express, pass a page_data JSON block tree instead, e.g.
 {"type":"page","children":[
@@ -775,6 +776,98 @@ def _md_to_blocks(markdown: str) -> list:
     return blocks
 
 
+# ---- AppFlowy block tree → Markdown (the inverse of _md_to_blocks) ---------
+# Reads a document collab's blocks and renders Markdown, so an agent can pull a
+# page or card body back out in the format it writes (symmetric with
+# create_page(markdown=...)). Inline styles come from each yjs Text's diff() —
+# segments of (text, {bold|italic|strikethrough|code|href}); block-type fields
+# (level, checked, language, url) come from the block's `data` JSON.
+
+# Markdown list "family": bullet-style items (- / - [ ]) pack tight together, but a
+# switch to/from an ordered (1.) list needs a blank line so it re-parses cleanly.
+_LIST_FAMILY = {"bulleted_list": "ul", "todo_list": "ul", "numbered_list": "ol"}
+
+
+def _inline_md(delta) -> str:
+    out = []
+    for text, attrs in delta or []:
+        a = attrs or {}
+        if a.get("code"):
+            seg = f"`{text}`"
+        else:
+            seg = text
+            if a.get("bold"):
+                seg = f"**{seg}**"
+            if a.get("italic"):
+                seg = f"*{seg}*"
+            if a.get("strikethrough"):
+                seg = f"~~{seg}~~"
+        if a.get("href"):
+            seg = f"[{seg}]({a['href']})"
+        out.append(seg)
+    return "".join(out)
+
+
+def _render_block(bid, blocks, cmap, tmap, depth):
+    """Return (lines, is_list_item) for a block and its (indented) children."""
+    b = blocks[bid]
+    ty = b["ty"] if "ty" in b else ""
+    data = json.loads(b["data"]) if ("data" in b and b["data"]) else {}
+    ext = b["external_id"] if "external_id" in b else None
+    delta = tmap[ext].diff() if (ext is not None and ext in tmap) else []
+    pad = "  " * depth
+
+    if ty == "code":
+        raw = "".join(t for t, _ in delta)
+        lines = [f"```{data.get('language', '')}", *raw.split("\n"), "```"]
+    elif ty == "divider":
+        lines = ["---"]
+    elif ty == "image":
+        lines = [f"![]({data.get('url', '')})"]
+    else:
+        text = _inline_md(delta)
+        if ty == "heading":
+            lines = ["#" * int(data.get("level", 1)) + " " + text]
+        elif ty == "bulleted_list":
+            lines = [f"{pad}- {text}"]
+        elif ty == "numbered_list":
+            lines = [f"{pad}1. {text}"]
+        elif ty == "todo_list":
+            box = "x" if data.get("checked") else " "
+            lines = [f"{pad}- [{box}] {text}"]
+        elif ty == "quote":
+            lines = [f"> {text}"]
+        else:  # paragraph, and any unknown block -> plain text (never dropped)
+            lines = [text]
+
+    ck = b["children"] if "children" in b else None
+    if ck is not None and ck in cmap:
+        for c in list(cmap[ck]):
+            child_lines, _ = _render_block(c, blocks, cmap, tmap, depth + 1)
+            lines.extend(child_lines)
+    return lines, _LIST_FAMILY.get(ty)
+
+
+def _doc_to_markdown(document) -> str:
+    """Render a document map ({blocks, meta, page_id}) to Markdown."""
+    blocks, meta = document["blocks"], document["meta"]
+    cmap, tmap = meta["children_map"], meta["text_map"]
+    root = blocks[document["page_id"]]
+    ck = root["children"] if "children" in root else None
+    if ck is None or ck not in cmap:
+        return ""
+    parts, prev_fam = [], None
+    for i, c in enumerate(list(cmap[ck])):
+        lines, fam = _render_block(c, blocks, cmap, tmap, 0)
+        block_md = "\n".join(lines)
+        if i == 0:
+            parts.append(block_md)
+        else:
+            parts.append(("\n" if fam and fam == prev_fam else "\n\n") + block_md)
+        prev_fam = fam
+    return "".join(parts).strip() + "\n"
+
+
 @mcp.tool(annotations=_CREATE)
 def create_page(
     workspace_id: str,
@@ -1126,10 +1219,23 @@ def restore_page(workspace_id: str, view_id: str) -> str:
 
 @mcp.tool(annotations=_READ)
 def get_page(workspace_id: str, view_id: str) -> dict:
-    """Gets a page's metadata (name, icon, layout, ...)."""
+    """Gets a page's metadata (name, icon, layout, ...). For the page's CONTENT as
+    Markdown, use get_page_markdown."""
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/page-view/{view_id}"
     return _api_call("GET", path).json().get("data", {})
+
+
+@mcp.tool(annotations=_READ)
+def get_page_markdown(workspace_id: str, page_id: str) -> str:
+    """Reads a Document page — or a database row's body — as Markdown (the inverse
+    of create_page(markdown=...)). page_id may be a document view id OR a database
+    row id (auto-resolved to the card's body document). Returns Markdown: headings,
+    bulleted / numbered / task lists (nested), quotes, fenced code, dividers,
+    images, and inline bold / italic / strikethrough / code / links."""
+    _require_workspace(workspace_id)
+    _, _, document = _open_document(workspace_id, page_id)
+    return _doc_to_markdown(document)
 
 
 # Concurrent collab edits can transiently lose a write, so update_row_cells confirms

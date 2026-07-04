@@ -28,6 +28,9 @@ All notable changes are documented here. The format loosely follows
   the AppFlowy block tree. One Markdown content interface for pages and row bodies
   alike, mirroring Notion's MCP. The JSON `page_data` / `blocks` path stays for blocks
   Markdown can't express.
+- **Read pages as Markdown.** `get_page_markdown` returns a Document page — or a
+  database row's body — as Markdown (the inverse of `create_page(markdown=...)`), so
+  agents read and write the same format (symmetric with Notion's `fetch`).
 - **Collab/CRDT layer** (via `pycrdt`): `update_row_cells`, `delete_row`,
   `add_block`, `edit_block_text`, `delete_block` — edit, move, and delete *any*
   existing row or document block (including UI-created ones), and place advanced

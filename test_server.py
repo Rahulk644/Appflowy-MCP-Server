@@ -339,3 +339,65 @@ def test_md_to_blocks_empty_and_fallback():
     assert (
         "".join(o["insert"] for b in blocks for o in b["data"]["delta"]).strip() != ""
     )
+
+
+def test_inline_md_formatting():
+    f = server._inline_md
+    assert f([("plain", None)]) == "plain"
+    assert f([("b", {"bold": True})]) == "**b**"
+    assert f([("i", {"italic": True})]) == "*i*"
+    assert f([("s", {"strikethrough": True})]) == "~~s~~"
+    assert f([("c", {"code": True})]) == "`c`"
+    assert f([("x", {"href": "http://u"})]) == "[x](http://u)"
+    assert f([("x", {"bold": True, "italic": True})]) == "***x***"
+    assert f([("x", {"bold": True, "href": "http://u"})]) == "[**x**](http://u)"
+
+
+def test_doc_to_markdown_renders_blocks():
+    # Mirrors AppFlowy's real document collab: block.data holds type fields, text
+    # lives in text_map as a yjs Text whose diff() yields the delta.
+    from pycrdt import Array, Doc, Map, Text
+
+    doc = Doc()
+    root = doc.get("data", type=Map)
+    with doc.transaction():
+        root["document"] = Map(
+            {
+                "blocks": Map(),
+                "meta": Map({"children_map": Map(), "text_map": Map()}),
+                "page_id": "page",
+            }
+        )
+        document = root["document"]
+        blocks = document["blocks"]
+        cmap = document["meta"]["children_map"]
+        tmap = document["meta"]["text_map"]
+
+        def add(bid, ty, data, ckey, text=None):
+            m = {"ty": ty, "data": data, "children": ckey}
+            if text is not None:
+                ext = "x" + bid
+                m["external_id"] = ext
+                tmap[ext] = Text(text)
+            blocks[bid] = Map(m)
+
+        add("page", "page", "{}", "pc")
+        cmap["pc"] = Array(["h", "b1", "b2", "t1", "c1"])
+        add("h", "heading", '{"level":2}', "hc", "Title")
+        cmap["hc"] = Array([])
+        add("b1", "bulleted_list", "{}", "b1c", "parent")
+        cmap["b1c"] = Array(["b1n"])
+        add("b1n", "bulleted_list", "{}", "b1nc", "child")
+        cmap["b1nc"] = Array([])
+        add("b2", "bulleted_list", "{}", "b2c", "sibling")
+        cmap["b2c"] = Array([])
+        add("t1", "todo_list", '{"checked":true}', "t1c", "done")
+        cmap["t1c"] = Array([])
+        add("c1", "code", '{"language":"py"}', "c1c", "x=1\ny=2")
+        cmap["c1c"] = Array([])
+    md = server._doc_to_markdown(root["document"])
+    assert "## Title" in md
+    assert "- parent\n  - child" in md  # nested item indented under its parent
+    assert "- sibling" in md
+    assert "- [x] done" in md
+    assert "```py\nx=1\ny=2\n```" in md
