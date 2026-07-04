@@ -226,7 +226,8 @@ supported path first, and check the roadmap before assuming a gap is permanent.
 | Bold / italic / strike / code / link | ✅ page bodies **and** in-place edits | Markdown or `page_data` delta; `add_block` / `edit_block_text` / `replace_text` |
 | Text color | ✅ | `page_data` delta `color` attr |
 | Background color | 🗺️ | |
-| @mention a person / page | 🗺️ | inline mention delta — foundation for agents-as-members |
+| @mention a **page** | ✅ | Markdown `[](mention:<view_id>)` |
+| @mention a person | 🗺️ | AppFlowy's editor has no person-mention type yet |
 | Emoji | ✅ | Unicode |
 | Date & reminder | 🗺️ | |
 

@@ -53,7 +53,7 @@ Here's what this MCP creates **today** — the rest is on the roadmap below.
 | **Media** | Image by URL | 🗺️ file / PDF / video / audio upload, photo gallery, web bookmark, Drive embed |
 | **Database** | Full-page Grid / Board / Calendar, extra views, Board grouping, select options | 🗺️ List / Gallery / Chart / Feed views, inline & linked views |
 | **Advanced** | Callouts (`> [!NOTE]`), block & inline equations (`$$` / `$…$`), toggle-headings (via `add_block`) | 🗺️ columns, table of contents, Mermaid |
-| **Inline style** | Bold / italic / strike / code / link (page bodies **and** in-place edits), color (page bodies), emoji | 🗺️ underline, background color, @mentions, date & reminder |
+| **Inline style** | Bold / italic / strike / code / link, **page @mention** (`[](mention:id)`), color (page bodies), emoji | 🗺️ underline, background color, person-mention (not in AppFlowy), date & reminder |
 | **AI blocks** | — | ⛔ AI note / transcript / summarize / ask — these run AppFlowy's own AI, not insertable content |
 
 Block-by-block detail lives in [KNOWLEDGE.md](KNOWLEDGE.md) (§9 Coverage).
@@ -158,7 +158,7 @@ CI runs lint, format-check, and tests on every push/PR.
 
 **Content & blocks**
 - **Richer editing** — insert-at-position and search-and-replace *by content* (no block ids), plus rich inline formatting (bold / links / color) on in-place edits.
-- **@mentions** — mention a person or page inline; the foundation for agents-as-workspace-members.
+- **Person mentions** — AppFlowy's editor has no person-mention type yet (page mentions ship via `[](mention:id)`); revisit when self-hosting adds agents as workspace members.
 - **More blocks** — columns, toggle headings, table of contents, block equation, Mermaid, link-to-page.
 - **Import files** — PDF / Word / PowerPoint / Excel / audio → Markdown → AppFlowy blocks (via [markitdown](https://github.com/microsoft/markitdown)), reusing the Markdown converter.
 - **Media** — file / PDF / image / video / audio upload, web bookmark, embeds.

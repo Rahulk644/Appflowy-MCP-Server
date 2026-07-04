@@ -530,3 +530,16 @@ def test_doc_to_markdown_callout_math_toggle():
     assert "> [!WARNING]\n> Heads up" in md
     assert "$$\na^2+b^2\n$$" in md
     assert "### Details" in md
+
+
+def test_page_mention_roundtrip():
+    # forward: [label](mention:<id>) -> a "$" op carrying the page-mention attribute
+    delta = server._md_inline_to_delta("See [Home](mention:pg123) now")
+    mention = next(o for o in delta if o.get("attributes", {}).get("mention"))
+    assert mention["insert"] == "$"
+    assert mention["attributes"]["mention"] == {"type": "page", "page_id": "pg123"}
+    # reverse: the mention op renders back to the same Markdown link
+    rendered = server._inline_md(
+        [("$", {"mention": {"type": "page", "page_id": "pg123"}})]
+    )
+    assert rendered == "[](mention:pg123)"

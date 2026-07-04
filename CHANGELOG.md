@@ -21,6 +21,9 @@ All notable changes are documented here. The format loosely follows
   no longer mis-typed.
 
 ### Added
+- **Page mentions in Markdown.** `[label](mention:<view_id>)` inserts a live inline
+  mention (link) to another page and round-trips through `get_page_markdown`. AppFlowy's
+  editor has no person-mention type, so this covers page mentions.
 - **Callouts and math blocks in Markdown.** `> [!NOTE]` / `[!TIP]` / `[!WARNING]` GFM
   alerts render as AppFlowy callouts and `$$…$$` as block equations — both directions
   (create and `get_page_markdown`). Adds `mdit-py-plugins` for `$`-math parsing.

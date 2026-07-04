@@ -85,6 +85,7 @@ and a row/card `document` all take standard Markdown, rendered into real blocks:
 [!WARNING]…), $$ math blocks, and inline **bold**/*italic*/~~strike~~/`code`. Prefer
 markdown for any prose or card body. READ any page or card
 body back AS Markdown with get_page_markdown(page_id) — the inverse (page view id or row id).
+MENTION a page inline with [](mention:<view_id>) — renders as a live link to that page.
 
 For blocks Markdown can't express, pass a page_data JSON block tree instead, e.g.
 {"type":"page","children":[
@@ -675,7 +676,18 @@ def _inline_delta(node) -> list:
             elif t in _INLINE_ATTR:
                 walk(c.children, {**attrs, _INLINE_ATTR[t]: True})
             elif t == "link":
-                walk(c.children, {**attrs, "href": c.attrs.get("href", "")})
+                href = c.attrs.get("href", "")
+                if href.startswith("mention:"):  # [](mention:<page_id>) -> page mention
+                    ops.append(
+                        {
+                            "insert": "$",
+                            "attributes": {
+                                "mention": {"type": "page", "page_id": href[8:]}
+                            },
+                        }
+                    )
+                else:
+                    walk(c.children, {**attrs, "href": href})
             elif t == "image":
                 alt = c.content or c.attrs.get("alt", "")
                 if alt:
@@ -860,6 +872,10 @@ def _inline_md(delta) -> str:
     out = []
     for text, attrs in delta or []:
         a = attrs or {}
+        mention = a.get("mention")
+        if mention and mention.get("page_id"):  # page mention -> [](mention:<id>)
+            out.append(f"[](mention:{mention['page_id']})")
+            continue
         if a.get("code"):
             seg = f"`{text}`"
         else:
