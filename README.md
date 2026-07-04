@@ -126,6 +126,12 @@ pytest -q
 ```
 CI runs lint, format-check, and tests on every push/PR.
 
+## 🩺 Troubleshooting
+
+**`ValueError: Cannot decode update: while reading, an unexpected value was found`** — a **pycrdt 0.14.1 regression** fails to decode some AppFlowy *database* collabs, which breaks every collab-layer structural op (`delete_row`, field/option edits) on the affected database while row cell-writes keep working. `requirements.txt` pins **`pycrdt==0.13.0`** to avoid it — don't unpin past `0.13` until it's fixed upstream.
+
+**A write looks like it didn't apply** — `get_database_row_details` reads a materialized view that can lag the live collab by minutes; the write is usually fine. `update_row_cells` confirms its own write against the collab (with retry) before returning, so its success result is trustworthy.
+
 ## 🧭 How this compares
 
 [`LucasXu0/appflowy_mcp`](https://github.com/LucasXu0/appflowy_mcp) covers pages/folders/trash/favorites. This server adds **database write-back, full row/block edit & delete via the collab layer, workspace scoping, and OAuth** — aimed at agents that *finish* work on a board, not just read it.

@@ -110,7 +110,9 @@ cell with `update_row_cells`, not `rename_page`.
   `/row/detail`, a **materialized view that lags the collab by minutes**. A write can
   be perfectly correct while an immediate re-read still shows the old value. Verify via
   a collab-backed path (or wait) — never conclude "the write failed" from a fresh
-  re-read alone. *(This one cost real debugging time.)*
+  re-read alone. (`update_row_cells` already confirms its own write against the collab
+  before returning, so *its* success result is trustworthy.) *(This one cost real
+  debugging time.)*
 - **Don't put per-row content in a shared column.** A RichText column value shows on
   *every* row; per-row checklists and notes belong in the row **body** document.
 - **Don't full-overwrite a live document.** Never `PUT` a whole collab; use the
