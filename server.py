@@ -1070,6 +1070,133 @@ def _doc_to_markdown(document) -> str:
     return "".join(parts).strip() + "\n"
 
 
+def _block_plain_text(block, text_map) -> str:
+    ext = block.get("external_id", None)
+    return str(text_map[ext]).strip() if ext is not None and ext in text_map else ""
+
+
+def _heading_level(block) -> int:
+    data = json.loads(block["data"]) if (block.get("data")) else {}
+    return int(data.get("level", 1))
+
+
+def _find_heading_sections(document, heading: str, level: int | None = None) -> list:
+    """Find document sections that start at a matching heading block.
+
+    A section extends until the next sibling heading with the same or higher level.
+    Child arrays are traversed too, so callers can target headings nested inside lists,
+    toggles, or other container blocks without flattening the document first.
+    """
+    blocks, meta = document["blocks"], document["meta"]
+    children_map, text_map = meta["children_map"], meta["text_map"]
+    target = heading.strip()
+    matches = []
+
+    def walk(parent_id: str):
+        children_key = blocks[parent_id].get("children", None)
+        if children_key is None or children_key not in children_map:
+            return
+        children = children_map[children_key]
+        ids = list(children)
+        for index, block_id in enumerate(ids):
+            block = blocks[block_id]
+            if block.get("ty") == "heading":
+                block_level = _heading_level(block)
+                if _block_plain_text(block, text_map) == target and (
+                    level is None or block_level == level
+                ):
+                    end = index + 1
+                    while end < len(ids):
+                        next_block = blocks[ids[end]]
+                        if (
+                            next_block.get("ty") == "heading"
+                            and _heading_level(next_block) <= block_level
+                        ):
+                            break
+                        end += 1
+                    matches.append(
+                        {
+                            "block_id": block_id,
+                            "parent_id": parent_id,
+                            "children_key": children_key,
+                            "start": index,
+                            "end": end,
+                            "level": block_level,
+                        }
+                    )
+            walk(block_id)
+
+    walk(document["page_id"])
+    return matches
+
+
+def _unique_heading_section(document, heading: str, level: int | None = None) -> dict:
+    matches = _find_heading_sections(document, heading, level)
+    if not matches:
+        raise ValueError(f"heading not found: {heading!r}")
+    if len(matches) > 1:
+        raise ValueError(f"heading is ambiguous: {heading!r}")
+    return matches[0]
+
+
+def _delete_block_tree(blocks, children_map, text_map, block_id: str) -> None:
+    block = blocks[block_id]
+    children_key = block.get("children", None)
+    if children_key is not None and children_key in children_map:
+        for child_id in list(children_map[children_key]):
+            _delete_block_tree(blocks, children_map, text_map, child_id)
+        del children_map[children_key]
+    ext = block.get("external_id", None)
+    if ext is not None and ext in text_map:
+        del text_map[ext]
+    del blocks[block_id]
+
+
+def _insert_blocks_into_section(
+    document, section: dict, index: int, markdown: str
+) -> list:
+    specs = _md_to_blocks(markdown)
+    if not specs:
+        return []
+    blocks, meta = document["blocks"], document["meta"]
+    children_map, text_map = meta["children_map"], meta["text_map"]
+    children = children_map[section["children_key"]]
+    ids = []
+    for offset, spec in enumerate(specs):
+        block_id = _insert_pd_block(
+            blocks, children_map, text_map, spec, section["parent_id"]
+        )
+        children.insert(index + offset, block_id)
+        ids.append(block_id)
+    return ids
+
+
+def _insert_after_heading(
+    document, heading: str, markdown: str, level: int | None = None
+) -> list:
+    """Insert Markdown blocks immediately after a unique heading."""
+    section = _unique_heading_section(document, heading, level)
+    return _insert_blocks_into_section(
+        document, section, section["start"] + 1, markdown
+    )
+
+
+def _replace_section(
+    document, heading: str, markdown: str, level: int | None = None
+) -> list:
+    """Replace the unique heading section with Markdown-rendered blocks."""
+    section = _unique_heading_section(document, heading, level)
+    blocks, meta = document["blocks"], document["meta"]
+    children_map, text_map = meta["children_map"], meta["text_map"]
+    children = children_map[section["children_key"]]
+    removed = list(children)[section["start"] : section["end"]]
+    for index in reversed(range(section["start"], section["end"])):
+        del children[index]
+    for block_id in removed:
+        _delete_block_tree(blocks, children_map, text_map, block_id)
+    return _insert_blocks_into_section(document, section, section["start"], markdown)
+
+
 # Code / equation blocks hold literal text; everything else renders inline Markdown.
 _PLAIN_TEXT_TYS = {"code", "math_equation"}
 

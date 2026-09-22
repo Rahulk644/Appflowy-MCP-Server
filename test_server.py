@@ -140,6 +140,122 @@ def test_add_blocks_batch_insert():
     assert len(list(cmap["pc"])) == 4  # heading + 2 todos + paragraph, one fold
 
 
+def _document_from_markdown(markdown):
+    from pycrdt import Array, Doc, Map
+
+    doc = Doc()
+    root = doc.get("data", type=Map)
+    with doc.transaction():
+        root["document"] = Map(
+            {
+                "blocks": Map(
+                    {"page": Map({"ty": "page", "data": "{}", "children": "pc"})}
+                ),
+                "meta": Map(
+                    {"children_map": Map({"pc": Array([])}), "text_map": Map()}
+                ),
+                "page_id": "page",
+            }
+        )
+        d = root["document"]
+        bmap, cmap, tmap = d["blocks"], d["meta"]["children_map"], d["meta"]["text_map"]
+        for spec in server._md_to_blocks(markdown):
+            cmap["pc"].append(server._insert_pd_block(bmap, cmap, tmap, spec, "page"))
+    return doc, root["document"]
+
+
+def test_insert_after_heading_preserves_existing_section():
+    doc, document = _document_from_markdown(
+        "# Title\n\n## Target\n\nold body\n\n## Next\n\nkeep me"
+    )
+    with doc.transaction():
+        ids = server._insert_after_heading(document, "Target", "inserted\n\n- item")
+
+    assert len(ids) == 2
+    md = server._doc_to_markdown(document)
+    assert "## Target\n\ninserted\n\n- item\n\nold body\n\n## Next" in md
+    assert "keep me" in md
+
+
+def test_replace_section_uses_heading_boundaries_and_preserves_neighbors():
+    doc, document = _document_from_markdown(
+        "# Before\n\nsafe\n\n## Target\n\nold body\n\n### Nested\n\nremove me\n\n## After\n\nsafe too"
+    )
+    with doc.transaction():
+        ids = server._replace_section(
+            document, "Target", "## Target\n\nnew body\n\n### Nested\n\nnew nested"
+        )
+
+    assert len(ids) == 4
+    md = server._doc_to_markdown(document)
+    assert "# Before\n\nsafe" in md
+    assert "## Target\n\nnew body\n\n### Nested\n\nnew nested" in md
+    assert "old body" not in md
+    assert "remove me" not in md
+    assert "## After\n\nsafe too" in md
+
+
+def test_section_helpers_reject_missing_and_duplicate_headings():
+    doc, document = _document_from_markdown("## Target\n\none\n\n## Target\n\ntwo")
+    with doc.transaction():
+        with pytest.raises(ValueError, match="ambiguous"):
+            server._replace_section(document, "Target", "## Target\n\nnew")
+        with pytest.raises(ValueError, match="not found"):
+            server._insert_after_heading(document, "Missing", "new")
+
+
+def test_section_helpers_can_target_nested_container_heading():
+    from pycrdt import Array, Doc, Map, Text
+
+    doc = Doc()
+    root = doc.get("data", type=Map)
+    with doc.transaction():
+        root["document"] = Map(
+            {
+                "blocks": Map(),
+                "meta": Map({"children_map": Map(), "text_map": Map()}),
+                "page_id": "page",
+            }
+        )
+        d = root["document"]
+        blocks, meta = d["blocks"], d["meta"]
+        cmap, tmap = meta["children_map"], meta["text_map"]
+
+        def add(bid, ty, data, children, text=None):
+            block = {"ty": ty, "data": data, "children": children}
+            if text is not None:
+                ext = f"t-{bid}"
+                block["external_id"] = ext
+                tmap[ext] = Text(text)
+            blocks[bid] = Map(block)
+
+        add("page", "page", "{}", "pc")
+        cmap["pc"] = Array(["parent", "after"])
+        add("parent", "toggle_list", "{}", "parent-children", "Parent")
+        cmap["parent-children"] = Array(["nested-heading", "nested-body"])
+        add(
+            "nested-heading",
+            "heading",
+            '{"level":3}',
+            "nested-heading-children",
+            "Target",
+        )
+        cmap["nested-heading-children"] = Array([])
+        add("nested-body", "paragraph", "{}", "nested-body-children", "old nested")
+        cmap["nested-body-children"] = Array([])
+        add("after", "paragraph", "{}", "after-children", "top level")
+        cmap["after-children"] = Array([])
+
+        server._replace_section(
+            document=d, heading="Target", markdown="### Target\n\nnew nested"
+        )
+
+    md = server._doc_to_markdown(root["document"])
+    assert "new nested" in md
+    assert "old nested" not in md
+    assert "top level" in md
+
+
 def test_set_text_utf8_offsets_with_emoji():
     # pycrdt Text indexes by UTF-8 byte; a leading emoji (4 bytes) must not drift the
     # format range, or links/bold after it land on the wrong characters.
