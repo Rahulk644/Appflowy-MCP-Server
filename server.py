@@ -21,6 +21,7 @@ Security model (see README/SECURITY):
     whole link like a password.
 """
 
+import asyncio
 import base64
 import hmac
 import json
@@ -257,7 +258,24 @@ def _require_workspace(workspace_id: str) -> None:
         )
 
 
-def _login() -> None:
+def _run_async(coro):
+    """Run an async helper from the current sync v1 tool surface.
+
+    The v2 surface will expose async tools directly. Until then, keep the existing
+    sync helpers working while moving all HTTP I/O to httpx.AsyncClient.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    raise RuntimeError(
+        "A synchronous AppFlowy helper was called from an active event loop; "
+        "call the async helper directly instead."
+    )
+
+
+async def _login_async() -> None:
     global _access_token, _refresh_token, _token_expires_at
     email = os.environ.get("APPFLOWY_EMAIL")
     password = os.environ.get("APPFLOWY_PASSWORD")
@@ -268,8 +286,8 @@ def _login() -> None:
     url = f"{BASE_URL}/gotrue/token?grant_type=password"
     data = {"email": email, "password": password}
 
-    with httpx.Client() as client:
-        res = client.post(url, json=data, headers={"User-Agent": USER_AGENT})
+    async with httpx.AsyncClient() as client:
+        res = await client.post(url, json=data, headers={"User-Agent": USER_AGENT})
         res.raise_for_status()
 
         body = res.json()
@@ -279,19 +297,23 @@ def _login() -> None:
         _token_expires_at = time.time() + expires_in - 60  # 60s buffer
 
 
-def _refresh() -> None:
+def _login() -> None:
+    _run_async(_login_async())
+
+
+async def _refresh_async() -> None:
     global _access_token, _refresh_token, _token_expires_at
     if not _refresh_token:
-        _login()
+        await _login_async()
         return
 
     url = f"{BASE_URL}/gotrue/token?grant_type=refresh_token"
     data = {"refresh_token": _refresh_token}
 
-    with httpx.Client() as client:
-        res = client.post(url, json=data, headers={"User-Agent": USER_AGENT})
+    async with httpx.AsyncClient() as client:
+        res = await client.post(url, json=data, headers={"User-Agent": USER_AGENT})
         if res.status_code != 200:
-            _login()  # refresh token expired -> re-login
+            await _login_async()  # refresh token expired -> re-login
             return
 
         body = res.json()
@@ -302,19 +324,27 @@ def _refresh() -> None:
         _token_expires_at = time.time() + expires_in - 60
 
 
-def get_auth_headers() -> dict:
+def _refresh() -> None:
+    _run_async(_refresh_async())
+
+
+async def get_auth_headers_async() -> dict:
     if not _access_token or time.time() >= _token_expires_at:
         try:
-            _refresh() if _refresh_token else _login()
+            await _refresh_async() if _refresh_token else await _login_async()
         except Exception:  # noqa: BLE001 - any refresh failure (expired/revoked/
             # malformed token, transport error) is recoverable by a full re-login.
-            _login()
+            await _login_async()
 
     return {
         "Authorization": f"Bearer {_access_token}",
         "User-Agent": USER_AGENT,
         "Content-Type": "application/json",
     }
+
+
+def get_auth_headers() -> dict:
+    return _run_async(get_auth_headers_async())
 
 
 # Status-code → what the agent should do about it. Surfaced in tool errors so a
@@ -330,14 +360,17 @@ _ERROR_HINTS = {
 }
 
 
-def _api_call(method: str, path: str, **kwargs) -> httpx.Response:
+async def _api_call_async(method: str, path: str, **kwargs) -> httpx.Response:
     """Authenticated AppFlowy API call with actionable errors. `path` is joined to
     BASE_URL. Raises RuntimeError with a specific, agent-readable message on failure so a
     tool error tells the agent how to fix its call rather than dumping a raw traceback."""
     try:
-        with httpx.Client(timeout=30.0) as client:
-            res = client.request(
-                method, f"{BASE_URL}{path}", headers=get_auth_headers(), **kwargs
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.request(
+                method,
+                f"{BASE_URL}{path}",
+                headers=await get_auth_headers_async(),
+                **kwargs,
             )
             res.raise_for_status()
             # AppFlowy can report an application error inside HTTP 200. In
@@ -370,6 +403,10 @@ def _api_call(method: str, path: str, **kwargs) -> httpx.Response:
         raise RuntimeError(
             f"AppFlowy API request did not complete ({type(e).__name__}) — retry shortly"
         ) from e
+
+
+def _api_call(method: str, path: str, **kwargs) -> httpx.Response:
+    return _run_async(_api_call_async(method, path, **kwargs))
 
 
 def _post(path: str, body: dict):

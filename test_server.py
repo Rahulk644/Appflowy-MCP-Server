@@ -502,9 +502,9 @@ def test_update_row_cells_raises_when_write_never_confirms(monkeypatch):
 
 
 def _mock_http(monkeypatch, handler):
-    """Point server.httpx.Client at a MockTransport and stub auth.
+    """Point server.httpx.AsyncClient at a MockTransport and stub auth.
 
-    NOTE: `server.httpx` IS the global httpx module, so patching `.Client` here is a
+    NOTE: `server.httpx` IS the global httpx module, so patching `.AsyncClient` here is a
     global patch. Capture the pristine class from the *class* object rather than the
     module attribute, or a second call in the same test would wrap the first mock
     (and keep serving the first handler) instead of replacing it.
@@ -514,18 +514,20 @@ def _mock_http(monkeypatch, handler):
     real_client = _PRISTINE_HTTPX_CLIENT
     monkeypatch.setattr(
         server.httpx,
-        "Client",
+        "AsyncClient",
         lambda **k: real_client(transport=httpx.MockTransport(handler)),
     )
-    monkeypatch.setattr(
-        server, "get_auth_headers", lambda: {"Authorization": "Bearer x"}
-    )
+
+    async def auth_headers():
+        return {"Authorization": "Bearer x"}
+
+    monkeypatch.setattr(server, "get_auth_headers_async", auth_headers)
 
 
 def _pristine_httpx_client():
     import httpx
 
-    return httpx.Client
+    return httpx.AsyncClient
 
 
 _PRISTINE_HTTPX_CLIENT = _pristine_httpx_client()
@@ -620,15 +622,17 @@ def test_api_call_actionable_error(monkeypatch):
     def handler(_request):
         return httpx.Response(404, text="object not found")
 
-    real_client = httpx.Client  # capture before patching to avoid recursion
+    real_client = httpx.AsyncClient  # capture before patching to avoid recursion
     monkeypatch.setattr(
         server.httpx,
-        "Client",
+        "AsyncClient",
         lambda **k: real_client(transport=httpx.MockTransport(handler)),
     )
-    monkeypatch.setattr(
-        server, "get_auth_headers", lambda: {"Authorization": "Bearer x"}
-    )
+
+    async def auth_headers():
+        return {"Authorization": "Bearer x"}
+
+    monkeypatch.setattr(server, "get_auth_headers_async", auth_headers)
 
     with pytest.raises(RuntimeError) as ei:
         server._api_call("GET", "/api/workspace/x/database/y/fields")
