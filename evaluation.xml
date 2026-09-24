@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation name="appflowy-mcp-v2-readonly" version="1">
+  <description>
+    Read-only, independently verifiable checks for the planned AppFlowy MCP v2
+    surface. These cases are tied to the future v2 verbs documented in
+    DESIGN-v2.md; the current v1 server is not expected to pass them until those
+    verbs are implemented.
+  </description>
+
+  <case id="workspace-context">
+    <prompt>List the AppFlowy workspaces this connector can access.</prompt>
+    <planned_tool>appflowy_fetch(id="self")</planned_tool>
+    <expected>
+      The answer identifies at least one workspace, includes a stable workspace
+      id, and marks the selected/default workspace if there is more than one.
+    </expected>
+  </case>
+
+  <case id="folder-tree">
+    <prompt>Show the top-level folder tree for the primary workspace.</prompt>
+    <planned_tool>appflowy_fetch(kind="workspace_folder", limit=50)</planned_tool>
+    <expected>
+      The answer names top-level spaces/pages and distinguishes page view ids
+      from database ids where both are present.
+    </expected>
+  </case>
+
+  <case id="page-markdown">
+    <prompt>Read a known document page as Markdown.</prompt>
+    <planned_tool>appflowy_fetch(id="PAGE_VIEW_ID", response_format="markdown")</planned_tool>
+    <expected>
+      The answer returns Markdown text rather than raw block JSON or CRDT
+      internals, and includes the page id/title used for verification.
+    </expected>
+  </case>
+
+  <case id="page-json">
+    <prompt>Fetch structured metadata for a known page view id.</prompt>
+    <planned_tool>appflowy_fetch(id="PAGE_VIEW_ID", response_format="json")</planned_tool>
+    <expected>
+      The answer includes the page name/id and does not confuse the view id with
+      a database id.
+    </expected>
+  </case>
+
+  <case id="search">
+    <prompt>Search the workspace for a unique known term.</prompt>
+    <planned_tool>appflowy_search(query="UNIQUE_TERM", limit=10)</planned_tool>
+    <expected>
+      The answer returns matching pages or rows with ids and enough surrounding
+      context to verify the hit.
+    </expected>
+  </case>
+
+  <case id="database-list">
+    <prompt>List databases available in the primary workspace.</prompt>
+    <planned_tool>appflowy_database(command="list", limit=20)</planned_tool>
+    <expected>
+      The answer returns database ids, names, and the folder/view id when the
+      database was discovered through a view.
+    </expected>
+  </case>
+
+  <case id="database-fields">
+    <prompt>List fields for a known database.</prompt>
+    <planned_tool>appflowy_database(command="fields", database_id="DATABASE_ID")</planned_tool>
+    <expected>
+      The answer includes field ids, names, types, and select options where
+      available.
+    </expected>
+  </case>
+
+  <case id="row-list">
+    <prompt>List row ids for a known database without reading every row body.</prompt>
+    <planned_tool>appflowy_rows(command="list", database_id="DATABASE_ID", limit=10)</planned_tool>
+    <expected>
+      The answer returns row ids and respects the requested limit/pagination.
+    </expected>
+  </case>
+
+  <case id="row-details">
+    <prompt>Read details for one known database row.</prompt>
+    <planned_tool>appflowy_rows(command="get", database_id="DATABASE_ID", row_id="ROW_ID")</planned_tool>
+    <expected>
+      The answer includes cell values keyed by field id or field name and makes
+      clear when a value is empty rather than omitting it silently.
+    </expected>
+  </case>
+
+  <case id="markdown-export">
+    <prompt>Export a small known page subtree as Markdown paths.</prompt>
+    <planned_tool>appflowy_export(id="PAGE_VIEW_ID", depth=2, limit=20)</planned_tool>
+    <expected>
+      The answer returns bounded path/markdown entries, preserves page hierarchy,
+      and reports truncation or next-page information if the limit is reached.
+    </expected>
+  </case>
+</evaluation>
