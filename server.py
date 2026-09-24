@@ -258,6 +258,24 @@ def _require_workspace(workspace_id: str) -> None:
         )
 
 
+def _default_workspace_id(workspace_id: str = "") -> str:
+    """Return an explicit workspace id, or infer it from a single allowed workspace.
+
+    v2 read verbs should be ergonomic for single-workspace deployments while staying
+    explicit for multi-workspace servers. If ALLOWED_WORKSPACE_IDS contains exactly one
+    id, callers may omit workspace_id; otherwise they must pass it.
+    """
+    if workspace_id:
+        _require_workspace(workspace_id)
+        return workspace_id
+    allowed = _allowed_workspaces()
+    if allowed is not None and len(allowed) == 1:
+        return next(iter(allowed))
+    raise ValueError(
+        "workspace_id is required unless ALLOWED_WORKSPACE_IDS contains exactly one id"
+    )
+
+
 def _run_async(coro):
     """Run an async helper from the current sync v1 tool surface.
 
@@ -1652,6 +1670,109 @@ def get_page_markdown(workspace_id: str, page_id: str) -> str:
     _require_workspace(workspace_id)
     _, _, document = _open_document(workspace_id, page_id)
     return _doc_to_markdown(document)
+
+
+@mcp.tool(annotations=_READ)
+async def appflowy_fetch(
+    id: str = "self",
+    kind: str = "auto",
+    workspace_id: str = "",
+    response_format: str = "json",
+    depth: int = 1,
+    database_id: str = "",
+) -> dict | list | str:
+    """v2 read verb for small, common fetches.
+
+    Examples:
+      * appflowy_fetch(id="self") -> visible workspaces
+      * appflowy_fetch(kind="workspace_folder", workspace_id="...") -> folder tree
+      * appflowy_fetch(id="page-view-id", response_format="markdown") -> page content
+      * appflowy_fetch(kind="database_fields", workspace_id="...", database_id="...")
+
+    This intentionally starts narrow: search and row pagination get their own v2
+    verbs/commands, while this covers identity, folders, page metadata/content, and
+    database field metadata without exposing old CRDT internals.
+    """
+    kind = kind.lower()
+    response_format = response_format.lower()
+    if response_format not in {"json", "markdown"}:
+        raise ValueError("response_format must be 'json' or 'markdown'")
+
+    if kind == "auto":
+        if id == "self":
+            kind = "self"
+        elif database_id:
+            kind = "database_fields"
+        else:
+            kind = "page"
+
+    if kind in {"self", "workspaces"}:
+        data = (await _api_call_async("GET", "/api/workspace")).json().get("data", [])
+        allowed = _allowed_workspaces()
+        if allowed is not None:
+            data = [
+                w for w in data if (w.get("workspace_id") or w.get("id")) in allowed
+            ]
+        return {"kind": "workspaces", "data": data}
+
+    workspace_id = _default_workspace_id(workspace_id)
+
+    if kind == "workspace_folder":
+        return {
+            "kind": "workspace_folder",
+            "workspace_id": workspace_id,
+            "data": (
+                await _api_call_async(
+                    "GET",
+                    f"/api/workspace/{workspace_id}/folder",
+                    params={"depth": depth},
+                )
+            )
+            .json()
+            .get("data", {}),
+        }
+
+    if kind == "database_fields":
+        if not database_id:
+            database_id = id if id != "self" else ""
+        if not database_id:
+            raise ValueError("database_id is required for kind='database_fields'")
+        return {
+            "kind": "database_fields",
+            "workspace_id": workspace_id,
+            "database_id": database_id,
+            "data": (
+                await _api_call_async(
+                    "GET",
+                    f"/api/workspace/{workspace_id}/database/{database_id}/fields",
+                )
+            )
+            .json()
+            .get("data", []),
+        }
+
+    if kind == "page":
+        if not id or id == "self":
+            raise ValueError("id must be a page/view id for kind='page'")
+        if response_format == "markdown":
+            return await asyncio.to_thread(get_page_markdown, workspace_id, id)
+        return {
+            "kind": "page",
+            "workspace_id": workspace_id,
+            "id": id,
+            "data": (
+                await _api_call_async(
+                    "GET", f"/api/workspace/{workspace_id}/page-view/{id}"
+                )
+            )
+            .json()
+            .get("data", {}),
+        }
+
+    raise ValueError(
+        "kind must be one of: auto, self, workspaces, workspace_folder, "
+        "database_fields, page"
+    )
 
 
 # Concurrent collab edits can transiently lose a write, so update_row_cells confirms

@@ -677,6 +677,107 @@ def test_api_call_accepts_success_envelope_and_empty_response(monkeypatch):
     )
 
 
+def test_appflowy_fetch_self_filters_allowed_workspaces(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    monkeypatch.setenv("ALLOWED_WORKSPACE_IDS", "ws-allowed")
+
+    def handler(request):
+        assert request.url.path == "/api/workspace"
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"workspace_id": "ws-allowed", "name": "Allowed"},
+                    {"workspace_id": "ws-other", "name": "Other"},
+                ]
+            },
+        )
+
+    _mock_http(monkeypatch, handler)
+    out = asyncio.run(server.appflowy_fetch(id="self"))
+
+    assert out["kind"] == "workspaces"
+    assert [w["workspace_id"] for w in out["data"]] == ["ws-allowed"]
+
+
+def test_appflowy_fetch_folder_infers_single_allowed_workspace(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    monkeypatch.setenv("ALLOWED_WORKSPACE_IDS", "ws-allowed")
+
+    def handler(request):
+        assert request.url.path == "/api/workspace/ws-allowed/folder"
+        assert request.url.params["depth"] == "2"
+        return httpx.Response(200, json={"data": {"views": [{"id": "page1"}]}})
+
+    _mock_http(monkeypatch, handler)
+    out = asyncio.run(server.appflowy_fetch(kind="workspace_folder", depth=2))
+
+    assert out == {
+        "kind": "workspace_folder",
+        "workspace_id": "ws-allowed",
+        "data": {"views": [{"id": "page1"}]},
+    }
+
+
+def test_appflowy_fetch_page_json_and_markdown(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    monkeypatch.setenv("ALLOWED_WORKSPACE_IDS", "ws-allowed")
+
+    def handler(request):
+        assert request.url.path == "/api/workspace/ws-allowed/page-view/page1"
+        return httpx.Response(200, json={"data": {"id": "page1", "name": "Page"}})
+
+    _mock_http(monkeypatch, handler)
+    json_out = asyncio.run(server.appflowy_fetch(id="page1", workspace_id="ws-allowed"))
+    assert json_out["kind"] == "page"
+    assert json_out["data"] == {"id": "page1", "name": "Page"}
+
+    monkeypatch.setattr(
+        server, "get_page_markdown", lambda workspace_id, page_id: "# Page"
+    )
+    md = asyncio.run(
+        server.appflowy_fetch(
+            id="page1", workspace_id="ws-allowed", response_format="markdown"
+        )
+    )
+    assert md == "# Page"
+
+
+def test_appflowy_fetch_database_fields(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    monkeypatch.setenv("ALLOWED_WORKSPACE_IDS", "ws-allowed")
+
+    def handler(request):
+        assert request.url.path == "/api/workspace/ws-allowed/database/db1/fields"
+        return httpx.Response(200, json={"data": [{"id": "f1", "name": "Title"}]})
+
+    _mock_http(monkeypatch, handler)
+    out = asyncio.run(
+        server.appflowy_fetch(
+            kind="database_fields", workspace_id="ws-allowed", id="db1"
+        )
+    )
+
+    assert out == {
+        "kind": "database_fields",
+        "workspace_id": "ws-allowed",
+        "database_id": "db1",
+        "data": [{"id": "f1", "name": "Title"}],
+    }
+
+
 def test_oauth_store_persists_across_instances(tmp_path):
     # Tokens must survive a restart: a fresh provider pointed at the same store
     # file reloads what a prior instance saved (this is what stops re-sign-in).
