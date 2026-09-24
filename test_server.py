@@ -256,6 +256,91 @@ def test_section_helpers_can_target_nested_container_heading():
     assert "top level" in md
 
 
+def test_appflowy_export_single_page(monkeypatch):
+    monkeypatch.setattr(
+        server, "get_page_markdown", lambda workspace_id, page_id: "# Exported"
+    )
+
+    out = server.appflowy_export("ws-allowed", "page1")
+
+    assert out == {
+        "entries": [{"path": "page1.md", "id": "page1", "markdown": "# Exported"}],
+        "warnings": [],
+        "has_more": False,
+    }
+
+
+def test_appflowy_export_child_tree_with_warnings(monkeypatch):
+    tree = {
+        "views": [
+            {
+                "view_id": "root",
+                "name": "Root/Page",
+                "children": [
+                    {"view_id": "child", "name": "Child"},
+                    {"view_id": "db", "name": "Database"},
+                ],
+            }
+        ]
+    }
+
+    monkeypatch.setattr(server, "get_workspace_folder", lambda *_a, **_k: tree)
+
+    def fake_markdown(_workspace_id, page_id):
+        if page_id == "db":
+            raise RuntimeError("not a document")
+        return f"# {page_id}"
+
+    monkeypatch.setattr(server, "get_page_markdown", fake_markdown)
+
+    out = server.appflowy_export("ws-allowed", "root", depth=1)
+
+    assert out["entries"] == [
+        {"path": "Root-Page.md", "id": "root", "markdown": "# root"},
+        {"path": "Root-Page/Child.md", "id": "child", "markdown": "# child"},
+    ]
+    assert out["warnings"][0]["id"] == "db"
+    assert out["warnings"][0]["path"] == "Root-Page/Database.md"
+    assert "not a document" in out["warnings"][0]["error"]
+    assert out["has_more"] is False
+
+
+def test_appflowy_export_limit_sets_has_more(monkeypatch):
+    tree = {
+        "views": [
+            {
+                "view_id": "root",
+                "name": "Root",
+                "children": [{"view_id": "child", "name": "Child"}],
+            }
+        ]
+    }
+    monkeypatch.setattr(server, "get_workspace_folder", lambda *_a, **_k: tree)
+    monkeypatch.setattr(
+        server, "get_page_markdown", lambda _workspace_id, page_id: f"# {page_id}"
+    )
+
+    out = server.appflowy_export("ws-allowed", "root", depth=1, limit=1)
+
+    assert out["entries"] == [{"path": "Root.md", "id": "root", "markdown": "# root"}]
+    assert out["has_more"] is True
+
+
+def test_appflowy_export_warns_when_tree_cannot_locate_target(monkeypatch):
+    monkeypatch.setattr(server, "get_workspace_folder", lambda *_a, **_k: {"views": []})
+    monkeypatch.setattr(
+        server, "get_page_markdown", lambda _workspace_id, page_id: f"# {page_id}"
+    )
+
+    out = server.appflowy_export("ws-allowed", "page1", depth=1)
+
+    assert out["entries"] == [
+        {"path": "page1.md", "id": "page1", "markdown": "# page1"}
+    ]
+    assert out["warnings"][0]["id"] == "page1"
+    assert "folder tree" in out["warnings"][0]["error"]
+
+
 def test_set_text_utf8_offsets_with_emoji():
     # pycrdt Text indexes by UTF-8 byte; a leading emoji (4 bytes) must not drift the
     # format range, or links/bold after it land on the wrong characters.
