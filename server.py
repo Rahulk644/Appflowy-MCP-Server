@@ -340,6 +340,26 @@ def _api_call(method: str, path: str, **kwargs) -> httpx.Response:
                 method, f"{BASE_URL}{path}", headers=get_auth_headers(), **kwargs
             )
             res.raise_for_status()
+            # AppFlowy can report an application error inside HTTP 200. In
+            # particular, row writes with a view_id in place of database_id
+            # return code 1012 without an HTTP error status.
+            try:
+                payload = res.json()
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict) and isinstance(payload.get("code"), int):
+                code = payload["code"]
+                if code != 0:
+                    message = " ".join(
+                        str(payload.get("message", "Request failed"))[:200].split()
+                    )
+                    hint = (
+                        "check that database_id is the actual database ID, not a view_id "
+                        "(call list_databases)"
+                        if code == 1012 and "/database/" in path
+                        else "check the request and resource permissions"
+                    )
+                    raise RuntimeError(f"AppFlowy API code {code}: {message}; {hint}.")
             return res
     except httpx.HTTPStatusError as e:
         code = e.response.status_code
@@ -358,10 +378,10 @@ def _post(path: str, body: dict):
 
 
 # ---- Collab / CRDT layer (Tier 2): edit/delete any block or row --------------
-# The REST API is create/append-only. For surgical edits we fetch the object's
-# yrs collab, mutate it with pycrdt, and POST the *diff* to the merging web-update
+# This implementation uses REST for create/append. For surgical edits we fetch
+# the object's yrs collab, mutate it with pycrdt, and POST the *diff* to web-update
 # endpoint (never the full-overwrite PUT, which clobbers concurrent edits).
-# collab_type: 0=Document, 1=Database, 5=DatabaseRow.
+# collab_type: 0=Document, 1=Database, 4=DatabaseRow.
 
 
 def _collab_doc_state(payload) -> bytes:
