@@ -522,6 +522,41 @@ def test_api_call_actionable_error(monkeypatch):
     assert "object not found" in msg  # includes the server's own words
 
 
+def test_api_call_rejects_application_error_inside_http_200(monkeypatch):
+    import httpx
+
+    def handler(_request):
+        return httpx.Response(
+            200,
+            json={
+                "code": 1012,
+                "message": "permission target was not found",
+            },
+        )
+
+    _mock_http(monkeypatch, handler)
+    with pytest.raises(RuntimeError, match="AppFlowy API code 1012") as ei:
+        server._api_call("POST", "/api/workspace/w/database/v/row", json={})
+    assert "database_id" in str(ei.value)
+    assert "permission target was not found" in str(ei.value)
+
+
+def test_api_call_accepts_success_envelope_and_empty_response(monkeypatch):
+    import httpx
+
+    def handler(request):
+        if request.url.path.endswith("/row"):
+            return httpx.Response(200, json={"code": 0, "data": "row-1"})
+        return httpx.Response(204)
+
+    _mock_http(monkeypatch, handler)
+    assert server._post("/api/workspace/w/database/d/row", {}) == "row-1"
+    assert (
+        server._api_call("POST", "/api/workspace/w/collab/d/web-update").status_code
+        == 204
+    )
+
+
 def test_oauth_store_persists_across_instances(tmp_path):
     # Tokens must survive a restart: a fresh provider pointed at the same store
     # file reloads what a prior instance saved (this is what stops re-sign-in).

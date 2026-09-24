@@ -170,9 +170,9 @@ error now names the actual keys instead of raising a bare `KeyError`.
 
 ### Next: v2.0.0 — API surface redesign (breaking)
 
-The tool surface grew one-tool-per-endpoint to **35 tools**. That is the wrong shape: a
+The tool surface grew one-tool-per-endpoint to **34 tools**. That is the wrong shape: a
 large surface makes an agent load and choose among dozens of schemas on every call, and
-bare names like `search` collide with any other MCP loaded alongside this one.
+bare names like `get_page` collide with any other MCP loaded alongside this one.
 
 v2 consolidates to **12 command-multiplexed verbs**, all `appflowy_`-prefixed, converts
 the whole HTTP layer to **async**, and adds Pydantic input validation, pagination, and
@@ -182,12 +182,12 @@ and `appflowy_api` remains a full passthrough.
 It also adds three capabilities: **AI chat** (`/api/chat/*`, with RAG over page ids),
 and bulk **Markdown import/export**.
 
-**The full design contract, including verified AppFlowy Cloud endpoint research, is in
-[DESIGN-v2.md](DESIGN-v2.md).** It is the implementation brief — read it before starting
-work on v2.
+**The proposed design is in [DESIGN-v2.md](DESIGN-v2.md).** Read the
+[2026-09-22 upstream audit](UPSTREAM-AUDIT-2026-09-22.md) first: the public Cloud
+backend is archived, and several endpoint assumptions need live verification.
 
 v2.0.0 renames every tool. The migration table will ship in this README; no aliases,
-because 35 shims alongside 12 verbs would defeat the point.
+because 34 shims alongside 12 verbs would defeat the point.
 
 ### Later
 

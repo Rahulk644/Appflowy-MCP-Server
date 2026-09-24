@@ -1,21 +1,23 @@
-# v2 design: 35 tools → 12 verbs
+# v2 design: 34 tools → 12 verbs
 
-Status: **approved, not yet implemented.** Branch `v2/consolidated-async-surface`.
+Status: **planned, not yet implemented; API assumptions pending live validation.**
+Start from `main`; there is no active v2 branch.
 
-This is the implementation contract for v2.0.0. It exists so the rewrite is mechanical
-rather than a fresh research problem, and so the API findings below are not re-derived.
+This is a proposed implementation contract for v2.0.0. Revalidate its API assumptions
+against the target deployment before implementing. See the
+[2026-09-22 upstream audit](UPSTREAM-AUDIT-2026-09-22.md).
 
 ---
 
 ## Why
 
-The v1 surface grew one tool per endpoint to 35 tools. Measured against the MCP
+The v1 surface grew one tool per endpoint to 34 tools. Measured against the MCP
 best-practice checklist, v1 fails on six counts:
 
 | Check | v1 |
 |---|---|
 | Server name `{service}_mcp` | ✗ `appflowy-mcp` (hyphen) |
-| Service prefix on tool names | ✗ 0 of 35 — bare `create_page`, `get_page` |
+| Service prefix on tool names | ✗ 0 of 34 — bare `create_page`, `get_page` |
 | Async network I/O | ✗ fully sync (`httpx.Client`, 0 async tools) |
 | Pydantic input models | ✗ none |
 | Pagination (`limit`/`has_more`/`next_offset`) | ✗ none |
@@ -29,7 +31,7 @@ Two matter more than the tool count:
 **Sync I/O.** Every AppFlowy call blocks the event loop, so concurrent agent calls
 serialise. All network operations must be `async`.
 
-**No prefixes.** Bare `search` / `get_page` collide when this server runs alongside
+**No prefixes.** Bare `get_page` / `create_page` collide when this server runs alongside
 another MCP — which is the normal case.
 
 On tool count: a large surface forces the agent to load and choose among dozens of
@@ -74,7 +76,12 @@ Command enums:
 
 ---
 
-## API findings (verified against AppFlowy-Cloud source — do not re-research)
+## API findings (historical AppFlowy-Cloud source; current backend unverified)
+
+The public AppFlowy-Cloud source is archived and no longer powers current SaaS or
+self-hosted deployments. Current first-party Web calls and commercial release notes
+are summarized in the [upstream audit](UPSTREAM-AUDIT-2026-09-22.md). Treat paths
+below as candidates until tested against a current Cloud deployment.
 
 ### AI chat — a real REST surface, no CRDT
 
@@ -94,24 +101,30 @@ From `src/api/chat.rs`:
 
 Two consequences for the tool design:
 
-- **Use the non-streaming answer endpoint.** MCP tool calls are request/response; the
-  SSE variant buys nothing and complicates the client.
+- **Verify the answer endpoint.** Current Web uses the SSE endpoint; the
+  non-streaming GET route is only known from the archived backend. Use it only
+  after a live compatibility check, or consume the SSE stream to completion.
 - **RAG context is `rag_ids` in chat settings**, not a per-question argument. So
   `appflowy_ai(command="ask", page_ids=[...])` sets settings first, then asks.
+  Current Web treats an empty `rag_ids` filter as workspace-wide unless it
+  substitutes the chat ID. Implement explicit empty-source and full-workspace
+  behavior before exposing this command.
 
-### Markdown import — there is NO markdown import API
+### Markdown import — no single-file Markdown API in current Web client
 
-`src/api/data_import.rs` exposes `POST /api/import` (multipart ZIP, headers
-`X-Content-Length` / `X-Content-MD5` / `X-Host`), `GET /api/import`, and
-`POST /api/import/create` (presigned S3). The import type is **`"notion"`**. No
-Markdown importer exists server-side.
+Current Web imports single Markdown files by parsing them client-side and sending
+a document-collab update. Its server import API supports Notion, Confluence,
+workspace ZIP, and database CSV imports. See the
+[Web import service](https://github.com/AppFlowy-IO/AppFlowy-Web/blob/main/src/components/app/import/import-service.ts)
+and [import API](https://github.com/AppFlowy-IO/AppFlowy-Web/blob/main/src/application/services/js-services/http/import-api.ts).
 
 So "Markdown import" is **client-side composition** over the existing
 markdown→block-tree converter, not a new API binding.
 
-**This server is remote (streamable HTTP), not local stdio.** A filesystem path
-argument would address the *server's* disk, not the caller's — useless and a
-directory-traversal risk. Therefore:
+**This server supports remote streamable HTTP as well as local stdio.** A filesystem
+path argument on a remote deployment would address the *server's* disk, not the
+caller's — useless and a directory-traversal risk. Therefore the common interface
+must work without local paths:
 
 - `appflowy_import` takes the tree **in the payload**: `entries: [{path, markdown}]`,
   creating parents before children and mapping `path` to the page hierarchy.
@@ -119,16 +132,18 @@ directory-traversal risk. Therefore:
   and `limit` caps so a large space cannot blow up the context window.
 
 (Reference implementations that take filesystem paths — e.g. `weironz/appflowy_mcp` —
-are stdio servers run locally via `uvx`, where that choice is correct. It is not
-correct here.)
+run locally via `uvx`, where that choice can work. The payload form also works for
+this server's stdio clients.)
 
-### Still absent from AppFlowy Cloud (re-checked, unchanged)
+### CRDT and export scope
 
-- No REST endpoint to edit or delete an arbitrary existing block — append-only.
-- No REST export endpoint; the desktop app exports client-side.
+- The current Web client still uses document collab updates. Whether a newer
+  REST endpoint edits an arbitrary existing block needs a current contract check.
+- REST export endpoints exist for workspace backup ZIP and view PDF. This v2
+  design's Markdown tree export remains a separate, client-side composition.
 
-The pycrdt/collab layer therefore remains **required**, not a design preference. Keep
-`pycrdt==0.13.0` pinned (0.14.1 regressed database-collab decoding).
+The current editing implementation uses pycrdt/collab. Keep `pycrdt==0.13.0`
+pinned until newer versions are tested against database collabs.
 
 ---
 
@@ -136,7 +151,7 @@ The pycrdt/collab layer therefore remains **required**, not a design preference.
 
 1. Async core: `_login`, `_refresh`, `_api_call` → `httpx.AsyncClient`; all verbs `async def`.
 2. Pydantic input models per verb, `Field(...)` with constraints and examples.
-3. The 12 verbs, replacing all 35 tools (clean break — no aliases; the point is a small surface).
+3. The 12 verbs, replacing all 34 tools (clean break — no aliases; the point is a small surface).
 4. `appflowy_ai`, `appflowy_import`, `appflowy_export`.
 5. Pagination + `response_format` on every list-shaped result; drop the deprecated SSE mount.
 6. Evaluations: 10 independent, read-only, verifiable QA pairs in `evaluation.xml`.
@@ -144,13 +159,14 @@ The pycrdt/collab layer therefore remains **required**, not a design preference.
 
 ## Compatibility
 
-**v2.0.0 is a breaking change** — every tool is renamed. No aliases: keeping 35 shims
-alongside 12 verbs would leave 47 tools in the manifest and defeat the purpose. The
+**v2.0.0 is a breaking change** — every tool is renamed. No aliases: keeping 34 shims
+alongside 12 verbs would leave 46 tools in the manifest and defeat the purpose. The
 README ships the full old→new migration table.
 
 ## Non-goals
 
 - Migrating to `mcp` 2.x (which removed `mcp.server.fastmcp`). Tracked separately; v2
   stays on the pinned `mcp>=1.13,<2`.
-- Streaming AI answers.
+- Returning a live AI token stream to the MCP client. Consuming AppFlowy's SSE
+  endpoint internally may be needed if the historical GET answer route is absent.
 - Person mentions — AppFlowy's editor has no person-mention type.
