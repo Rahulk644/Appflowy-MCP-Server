@@ -503,6 +503,251 @@ def test_appflowy_export_validates_bounds():
         )
 
 
+def test_live_compatibility_harness_read_only(monkeypatch):
+    import asyncio
+
+    import live_compatibility
+
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, data):
+            self._data = data
+
+        def json(self):
+            return {"data": self._data}
+
+    async def fake_api_call(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        if path == "/api/workspace":
+            return FakeResponse([{"workspace_id": "ws-allowed", "name": "Workspace"}])
+        if path == "/api/workspace/ws-allowed/folder":
+            return FakeResponse(
+                {
+                    "views": [
+                        {
+                            "view_id": "page-1",
+                            "name": "Doc",
+                            "layout": 0,
+                            "parent_view_id": "space-1",
+                            "is_space": False,
+                            "children": [],
+                        }
+                    ]
+                }
+            )
+        if path == "/api/workspace/ws-allowed/database":
+            return FakeResponse([{"database_id": "db-1", "name": "Database"}])
+        if path == "/api/workspace/ws-allowed/database/db-1/fields":
+            return FakeResponse([{"id": "field-1", "name": "Title"}])
+        if path == "/api/workspace/ws-allowed/database/db-1/row":
+            return FakeResponse(["row-1"])
+        if path == "/api/workspace/ws-allowed/page-view/page-1":
+            return FakeResponse({"view_id": "page-1", "name": "Doc"})
+        raise AssertionError(f"unexpected route {method} {path}")
+
+    async def fake_markdown(workspace_id, page_id):
+        assert workspace_id == "ws-allowed"
+        assert page_id == "page-1"
+        return "# Doc"
+
+    monkeypatch.setattr(server, "_api_call_async", fake_api_call)
+    monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
+
+    report = asyncio.run(
+        live_compatibility.run_compatibility_checks(
+            live_compatibility.CompatibilityConfig(
+                deployment_type="self-hosted-docker",
+                version="0.18.5",
+                build="revision",
+                workspace_id="ws-allowed",
+                database_id="",
+                document_id="",
+                parent_view_id="",
+            )
+        )
+    )
+
+    assert report["schema"] == "appflowy-mcp.live-compatibility-report.v1"
+    assert report["summary"] == {"passed": 7, "failed": 0, "skipped": 1}
+    assert report["checks"][-1]["name"] == "reversible_create_read_trash"
+    assert not any(call[0] == "POST" for call in calls)
+    assert "revision" in str(report)
+    assert "APPFLOWY_PASSWORD" not in str(report)
+
+
+def test_live_compatibility_public_base_url_strips_private_parts(monkeypatch):
+    import live_compatibility
+
+    monkeypatch.setattr(
+        server,
+        "BASE_URL",
+        "https://alice:secret@example.internal:8443/private/api?token=abc#frag",
+    )
+
+    assert live_compatibility._public_base_url() == "https://example.internal:8443"
+
+
+def test_live_compatibility_sanitizes_errors_without_raw_text(monkeypatch):
+    import json
+
+    import live_compatibility
+
+    monkeypatch.setenv("APPFLOWY_EMAIL", "bot@example.com")
+    monkeypatch.setenv("APPFLOWY_PASSWORD", "password-secret")
+    monkeypatch.setenv(
+        "APPFLOWY_BASE_URL", "https://alice:secret@example.internal/private/api"
+    )
+
+    error = live_compatibility._sanitize_error(
+        RuntimeError(
+            "AppFlowy API 502: unexpected AppFlowy API error. "
+            "Server said: bot@example.com password-secret "
+            "https://alice:secret@example.internal/private/api?token=abc "
+            "private response body"
+        )
+    )
+    encoded = json.dumps(error)
+
+    assert error == {"type": "RuntimeError", "http_status": "502"}
+    assert "bot@example.com" not in encoded
+    assert "password-secret" not in encoded
+    assert "alice:secret" not in encoded
+    assert "token=abc" not in encoded
+    assert "/private/api" not in encoded
+    assert "private response body" not in encoded
+
+
+def test_live_compatibility_failed_checks_are_not_live_validated():
+    import asyncio
+
+    import live_compatibility
+
+    async def fail():
+        raise RuntimeError("AppFlowy API code 1017: private server response")
+
+    recorder = live_compatibility.CompatibilityRecorder()
+    asyncio.run(
+        recorder.record(
+            name="failing_route",
+            route="/api/workspace/{workspace_id}/page-view",
+            operation=fail,
+        )
+    )
+
+    check = recorder.checks[0]
+    assert check["ok"] is False
+    assert check["classification"] == live_compatibility.FAILED
+    assert check["classification"] != live_compatibility.LIVE_VALIDATED
+    assert check["evidence_basis"] == live_compatibility.CURRENT_WEB_OBSERVED
+    assert check["error"] == {"type": "RuntimeError", "appflowy_code": "1017"}
+
+
+def test_live_compatibility_document_discovery_ignores_folder_root():
+    import live_compatibility
+
+    folder = {
+        "view_id": "workspace-root",
+        "layout": 0,
+        "parent_view_id": None,
+        "is_space": False,
+        "children": [
+            {
+                "view_id": "space",
+                "layout": 0,
+                "parent_view_id": "workspace-root",
+                "is_space": True,
+                "children": [
+                    {
+                        "view_id": "doc-page",
+                        "layout": 0,
+                        "parent_view_id": "space",
+                        "is_space": False,
+                        "children": [],
+                    }
+                ],
+            },
+        ],
+    }
+
+    assert live_compatibility._extract_document_id(folder, "") == "doc-page"
+
+
+def test_live_compatibility_harness_reversible_flag(monkeypatch):
+    import asyncio
+
+    import live_compatibility
+
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, data):
+            self._data = data
+
+        def json(self):
+            return {"data": self._data}
+
+    async def fake_api_call(method, path, **kwargs):
+        calls.append((method, path))
+        if path == "/api/workspace":
+            return FakeResponse([{"workspace_id": "ws-allowed"}])
+        if path == "/api/workspace/ws-allowed/folder":
+            return FakeResponse({"views": []})
+        if path == "/api/workspace/ws-allowed/database":
+            return FakeResponse([])
+        if path == "/api/workspace/ws-allowed/page-view":
+            return FakeResponse({"view_id": "created-page"})
+        if path == "/api/workspace/ws-allowed/page-view/created-page":
+            return FakeResponse({"view_id": "created-page"})
+        if path == "/api/workspace/ws-allowed/page-view/created-page/move-to-trash":
+            return FakeResponse("")
+        raise AssertionError(f"unexpected route {method} {path}")
+
+    monkeypatch.setattr(server, "_api_call_async", fake_api_call)
+
+    report = asyncio.run(
+        live_compatibility.run_compatibility_checks(
+            live_compatibility.CompatibilityConfig(
+                deployment_type="self-hosted-docker",
+                version="0.18.5",
+                build="revision",
+                workspace_id="ws-allowed",
+                database_id="",
+                document_id="",
+                parent_view_id="parent-page",
+                run_reversible=True,
+            )
+        )
+    )
+
+    assert report["summary"]["failed"] == 0
+    names = [check["name"] for check in report["checks"]]
+    assert "reversible_page_create" in names
+    assert "reversible_page_read" in names
+    assert "reversible_page_trash" in names
+    assert ("POST", "/api/workspace/ws-allowed/page-view") in calls
+
+
+def test_live_compatibility_refuses_ci(monkeypatch):
+    import live_compatibility
+
+    monkeypatch.setenv("CI", "true")
+    monkeypatch.setenv("APPFLOWY_COMPAT_ALLOW_CI", "true")
+
+    with pytest.raises(SystemExit, match="Refusing to run"):
+        live_compatibility._refuse_ci_without_explicit_opt_in()
+
+
+def test_live_compatibility_refuses_github_actions(monkeypatch):
+    import live_compatibility
+
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+
+    with pytest.raises(SystemExit, match="Refusing to run"):
+        live_compatibility._refuse_ci_without_explicit_opt_in()
+
+
 def test_set_text_utf8_offsets_with_emoji():
     # pycrdt Text indexes by UTF-8 byte; a leading emoji (4 bytes) must not drift the
     # format range, or links/bold after it land on the wrong characters.

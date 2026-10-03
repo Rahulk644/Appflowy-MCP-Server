@@ -144,6 +144,36 @@ pytest -q
 ```
 CI runs lint, format-check, and tests on every push/PR.
 
+### Live compatibility validation
+
+`live_compatibility.py` is an opt-in operator harness for the v2 live-validation
+gate. It is not an MCP tool and refuses to run in CI because it requires live
+credentials.
+
+Read-only checks:
+
+```bash
+APPFLOWY_EMAIL=bot@example.com \
+APPFLOWY_PASSWORD=... \
+APPFLOWY_BASE_URL=https://appflowy.example.com \
+APPFLOWY_COMPAT_DEPLOYMENT_TYPE=self-hosted-docker \
+APPFLOWY_COMPAT_VERSION=0.18.5 \
+APPFLOWY_COMPAT_BUILD=86feb976d320e3ced95b7acaff57009f4935fcbe \
+APPFLOWY_COMPAT_WORKSPACE_ID=... \
+python live_compatibility.py --output compatibility-report.json
+```
+
+Optional reversible create/read/trash checks are disabled unless explicitly requested:
+
+```bash
+APPFLOWY_COMPAT_PARENT_VIEW_ID=... python live_compatibility.py --run-reversible
+```
+
+The report records sanitized response shapes. Successful live routes are classified
+as `live_validated`; failed or skipped routes keep their evidence basis separately
+and are not marked validated. Reports must not include passwords, tokens, userinfo,
+private URL paths, or raw server response bodies.
+
 ## 🩺 Troubleshooting
 
 **`ModuleNotFoundError: No module named 'mcp.server.fastmcp'`** — **`mcp` 2.0.0 removed
