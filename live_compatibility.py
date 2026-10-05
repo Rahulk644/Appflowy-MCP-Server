@@ -426,6 +426,8 @@ def _public_base_url() -> str:
     if not parsed.scheme or not parsed.hostname:
         return "unspecified"
     host = parsed.hostname.lower()
+    if ":" in host:
+        host = f"[{host}]"
     if parsed.port is not None:
         host = f"{host}:{parsed.port}"
     return urlunsplit((parsed.scheme.lower(), host, "", "", ""))
