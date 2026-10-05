@@ -588,6 +588,26 @@ def test_live_compatibility_public_base_url_strips_private_parts(monkeypatch):
     assert live_compatibility._public_base_url() == "https://example.internal:8443"
 
 
+@pytest.mark.parametrize(
+    ("base_url", "expected"),
+    [
+        ("http://[::1]/private?token=abc#frag", "http://[::1]"),
+        (
+            "https://alice:secret@[2001:db8::1]:8443/private?token=abc#frag",
+            "https://[2001:db8::1]:8443",
+        ),
+    ],
+)
+def test_live_compatibility_public_base_url_preserves_ipv6_brackets(
+    monkeypatch, base_url, expected
+):
+    import live_compatibility
+
+    monkeypatch.setattr(server, "BASE_URL", base_url)
+
+    assert live_compatibility._public_base_url() == expected
+
+
 def test_live_compatibility_sanitizes_errors_without_raw_text(monkeypatch):
     import json
 
