@@ -53,9 +53,15 @@ class CompatibilityConfig:
     parent_view_id: str
     row_field_id: str = ""
     run_reversible: bool = False
+    validate_token_refresh: bool = False
 
     @classmethod
-    def from_env(cls, *, run_reversible: bool = False) -> CompatibilityConfig:
+    def from_env(
+        cls,
+        *,
+        run_reversible: bool = False,
+        validate_token_refresh: bool = False,
+    ) -> CompatibilityConfig:
         return cls(
             deployment_type=os.environ.get(
                 "APPFLOWY_COMPAT_DEPLOYMENT_TYPE", "unspecified"
@@ -68,6 +74,7 @@ class CompatibilityConfig:
             document_id=os.environ.get("APPFLOWY_COMPAT_DOCUMENT_ID", ""),
             parent_view_id=os.environ.get("APPFLOWY_COMPAT_PARENT_VIEW_ID", ""),
             run_reversible=run_reversible,
+            validate_token_refresh=validate_token_refresh,
         )
 
 
@@ -284,6 +291,21 @@ async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any
         route="/api/workspace",
         operation=lambda: _api_json("GET", "/api/workspace"),
     )
+    if config.validate_token_refresh:
+        refreshed = await recorder.record(
+            name="auth_token_refresh",
+            method="POST",
+            route="/gotrue/token?grant_type=refresh_token",
+            operation=_validate_token_refresh,
+        )
+        if refreshed is not None:
+            await recorder.record(
+                name="auth_after_token_refresh",
+                method="GET",
+                route="/api/workspace",
+                operation=lambda: _api_json("GET", "/api/workspace"),
+            )
+        return _report(config, recorder)
     workspace_id = _extract_workspace_id(workspaces, config.workspace_id)
     if not workspace_id:
         recorder.skip(
@@ -367,6 +389,25 @@ async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any
         )
 
     return _report(config, recorder)
+
+
+async def _validate_token_refresh() -> dict[str, bool]:
+    """Exercise GoTrue refresh without exposing either token to the report."""
+    if not server._refresh_token:
+        raise RuntimeError("Initial login did not provide a refresh token")
+
+    previous_access_token = server._access_token
+    refresh_succeeded = await server._refresh_async()
+    if not refresh_succeeded:
+        raise RuntimeError("Refresh was rejected and fell back to password login")
+    if not server._access_token:
+        raise RuntimeError("Refresh did not provide an access token")
+
+    return {
+        "refresh_succeeded": True,
+        "access_token_rotated": server._access_token != previous_access_token,
+        "refresh_token_present": bool(server._refresh_token),
+    }
 
 
 async def _run_reversible_checks(
@@ -576,6 +617,7 @@ def _report(
         "modes": {
             "read_only_default": True,
             "reversible_checks_enabled": config.run_reversible,
+            "token_refresh_validation_enabled": config.validate_token_refresh,
             "live_credentials_in_ci": False,
         },
         "checks": recorder.checks,
@@ -622,7 +664,10 @@ def _truthy_env(name: str) -> bool:
 
 async def _main_async(args: argparse.Namespace) -> int:
     _refuse_ci_without_explicit_opt_in()
-    config = CompatibilityConfig.from_env(run_reversible=args.run_reversible)
+    config = CompatibilityConfig.from_env(
+        run_reversible=args.run_reversible,
+        validate_token_refresh=args.validate_token_refresh,
+    )
     report = await run_compatibility_checks(config)
     output = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
@@ -643,6 +688,14 @@ def main(argv: list[str] | None = None) -> int:
             "Enable disposable page create/read/collab-edit/trash checks and, "
             "when configured, database row create/collab-edit/delete checks. "
             "Requires APPFLOWY_COMPAT_PARENT_VIEW_ID."
+        ),
+    )
+    parser.add_argument(
+        "--validate-token-refresh",
+        action="store_true",
+        help=(
+            "Exercise the GoTrue refresh-token flow and verify a subsequent "
+            "authenticated request (disabled by default)."
         ),
     )
     parser.add_argument(

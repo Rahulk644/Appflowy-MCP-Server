@@ -623,6 +623,61 @@ def test_live_compatibility_harness_read_only(monkeypatch):
     assert "APPFLOWY_PASSWORD" not in str(report)
 
 
+def test_live_compatibility_token_refresh_is_explicit_and_sanitized(monkeypatch):
+    import asyncio
+    import json
+
+    import live_compatibility
+
+    calls = []
+
+    class FakeResponse:
+        def json(self):
+            return {"data": []}
+
+    async def fake_api_call(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        assert path == "/api/workspace"
+        return FakeResponse()
+
+    async def fake_refresh():
+        server._access_token = "new-private-access-token"
+        server._refresh_token = "new-private-refresh-token"
+        return True
+
+    monkeypatch.setattr(server, "_api_call_async", fake_api_call)
+    monkeypatch.setattr(server, "_access_token", "old-private-access-token")
+    monkeypatch.setattr(server, "_refresh_token", "old-private-refresh-token")
+    monkeypatch.setattr(server, "_refresh_async", fake_refresh)
+
+    report = asyncio.run(
+        live_compatibility.run_compatibility_checks(
+            live_compatibility.CompatibilityConfig(
+                deployment_type="self-hosted-docker",
+                version="24.04",
+                build="revision",
+                workspace_id="",
+                database_id="",
+                document_id="",
+                parent_view_id="",
+                validate_token_refresh=True,
+            )
+        )
+    )
+
+    assert report["summary"] == {"passed": 3, "failed": 0, "skipped": 0}
+    assert report["modes"]["token_refresh_validation_enabled"] is True
+    assert [check["name"] for check in report["checks"][:3]] == [
+        "auth_and_workspace_listing",
+        "auth_token_refresh",
+        "auth_after_token_refresh",
+    ]
+    assert [path for _, path, _ in calls] == ["/api/workspace", "/api/workspace"]
+    encoded = json.dumps(report)
+    assert "old-private" not in encoded
+    assert "new-private" not in encoded
+
+
 def test_live_compatibility_public_base_url_strips_private_parts(monkeypatch):
     import live_compatibility
 
@@ -1541,6 +1596,67 @@ def test_async_auth_headers_serializes_concurrent_login(monkeypatch):
 
     assert calls["login"] == 1
     assert {header["Authorization"] for header in headers} == {"Bearer token"}
+
+
+def test_async_refresh_reports_gotrue_success_without_exposing_tokens(monkeypatch):
+    import asyncio
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "access_token": "new-access",
+                "refresh_token": "new-refresh",
+                "expires_in": 3600,
+            }
+
+    class FakeClient:
+        async def post(self, url, json, headers):
+            assert url.endswith("/gotrue/token?grant_type=refresh_token")
+            assert json == {"refresh_token": "old-refresh"}
+            assert "Authorization" not in headers
+            return FakeResponse()
+
+    async def fake_get_async_client():
+        return FakeClient()
+
+    monkeypatch.setattr(server, "_access_token", "old-access")
+    monkeypatch.setattr(server, "_refresh_token", "old-refresh")
+    monkeypatch.setattr(server, "_token_expires_at", 0)
+    monkeypatch.setattr(server, "_get_async_client", fake_get_async_client)
+
+    assert asyncio.run(server._refresh_async()) is True
+    assert server._access_token == "new-access"
+    assert server._refresh_token == "new-refresh"
+    assert server._token_expires_at > server.time.time()
+
+
+def test_async_refresh_reports_password_login_fallback(monkeypatch):
+    import asyncio
+
+    class FakeResponse:
+        status_code = 401
+
+    class FakeClient:
+        async def post(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    async def fake_get_async_client():
+        return FakeClient()
+
+    async def fake_login():
+        server._access_token = "login-access"
+        server._refresh_token = "login-refresh"
+        server._token_expires_at = server.time.time() + 3600
+
+    monkeypatch.setattr(server, "_access_token", "old-access")
+    monkeypatch.setattr(server, "_refresh_token", "rejected-refresh")
+    monkeypatch.setattr(server, "_get_async_client", fake_get_async_client)
+    monkeypatch.setattr(server, "_login_async", fake_login)
+
+    assert asyncio.run(server._refresh_async()) is False
+    assert server._access_token == "login-access"
 
 
 def test_async_api_call_reuses_shared_client(monkeypatch):

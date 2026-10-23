@@ -172,6 +172,18 @@ APPFLOWY_COMPAT_ROW_FIELD_ID=... \
 python live_compatibility.py --run-reversible
 ```
 
+Token refresh is also a separate opt-in mode. It runs only the initial authenticated
+workspace request, the GoTrue refresh grant, and a second authenticated workspace
+request. It verifies that refresh did not silently fall back to password login:
+
+```bash
+python live_compatibility.py --validate-token-refresh \
+  --output compatibility-report.token-refresh.json
+```
+
+The report records only sanitized response shapes and boolean refresh properties;
+access and refresh token values are never written to disk.
+
 Reversible mode creates a disposable page, verifies a collab document edit, trashes
 the page, and—when a database plus writable text field are available—creates a
 disposable row, verifies a collab cell edit, and hard-deletes that temporary row.
