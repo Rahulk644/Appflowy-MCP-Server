@@ -1,0 +1,133 @@
+{
+  "base_url": "https://appflowy.boehler.uk",
+  "checks": [
+    {
+      "classification": "live_validated",
+      "destructive": false,
+      "duration_ms": 289.7,
+      "evidence_basis": "current_web_observed",
+      "method": "GET",
+      "name": "auth_and_workspace_listing",
+      "ok": true,
+      "response_shape": {
+        "count": 1,
+        "item": {
+          "fields": {
+            "created_at": "str",
+            "database_storage_id": "str",
+            "icon": "str",
+            "member_count": "number",
+            "owner_email": "str",
+            "owner_name": "str",
+            "owner_uid": "number",
+            "workspace_id": "str",
+            "workspace_name": "str",
+            "workspace_type": "number"
+          },
+          "keys": [
+            "created_at",
+            "database_storage_id",
+            "icon",
+            "member_count",
+            "owner_email",
+            "owner_name",
+            "owner_uid",
+            "role",
+            "workspace_id",
+            "workspace_name",
+            "workspace_type"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "reversible": false,
+      "route": "/api/workspace"
+    },
+    {
+      "classification": "live_validated",
+      "destructive": false,
+      "duration_ms": 114.7,
+      "evidence_basis": "current_web_observed",
+      "method": "POST",
+      "name": "auth_token_refresh",
+      "ok": true,
+      "response_shape": {
+        "fields": {
+          "access_token_rotated": "bool",
+          "refresh_succeeded": "bool",
+          "refresh_token_present": "bool"
+        },
+        "keys": [
+          "access_token_rotated",
+          "refresh_succeeded",
+          "refresh_token_present"
+        ],
+        "type": "object"
+      },
+      "reversible": false,
+      "route": "/gotrue/token?grant_type=refresh_token"
+    },
+    {
+      "classification": "live_validated",
+      "destructive": false,
+      "duration_ms": 44.2,
+      "evidence_basis": "current_web_observed",
+      "method": "GET",
+      "name": "auth_after_token_refresh",
+      "ok": true,
+      "response_shape": {
+        "count": 1,
+        "item": {
+          "fields": {
+            "created_at": "str",
+            "database_storage_id": "str",
+            "icon": "str",
+            "member_count": "number",
+            "owner_email": "str",
+            "owner_name": "str",
+            "owner_uid": "number",
+            "workspace_id": "str",
+            "workspace_name": "str",
+            "workspace_type": "number"
+          },
+          "keys": [
+            "created_at",
+            "database_storage_id",
+            "icon",
+            "member_count",
+            "owner_email",
+            "owner_name",
+            "owner_uid",
+            "role",
+            "workspace_id",
+            "workspace_name",
+            "workspace_type"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "reversible": false,
+      "route": "/api/workspace"
+    }
+  ],
+  "deployment": {
+    "build": "appflowyinc/appflowy_cloud@sha256:739ab51324f10eb55818122145c9d69eca76c9f63266812e97f117a39412af16",
+    "type": "self-hosted-docker",
+    "version": "24.04"
+  },
+  "generated_at": "2026-10-23T20:52:13+00:00",
+  "modes": {
+    "live_credentials_in_ci": false,
+    "read_only_default": true,
+    "reversible_checks_enabled": false,
+    "token_refresh_validation_enabled": true
+  },
+  "schema": "appflowy-mcp.live-compatibility-report.v1",
+  "summary": {
+    "failed": 0,
+    "passed": 3,
+    "skipped": 0
+  }
+}

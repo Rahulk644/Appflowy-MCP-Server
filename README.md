@@ -161,6 +161,24 @@ policy. OAuth identifies clients; it does not grant each client a separate
 AppFlowy role or page-subtree scope. Protect remote HTTP with authentication and
 HTTPS. See [SECURITY.md](SECURITY.md).
 
+Token refresh is also a separate opt-in mode. It runs only the initial authenticated
+workspace request, the GoTrue refresh grant, and a second authenticated workspace
+request. It verifies that refresh did not silently fall back to password login:
+
+```bash
+python live_compatibility.py --validate-token-refresh \
+  --output compatibility-report.token-refresh.json
+```
+
+The report records only sanitized response shapes and boolean refresh properties;
+access and refresh token values are never written to disk.
+
+Reversible mode creates a disposable page, verifies a collab document edit, trashes
+the page, and—when a database plus writable text field are available—creates a
+disposable row, verifies a collab cell edit, and hard-deletes that temporary row.
+`APPFLOWY_COMPAT_ROW_FIELD_ID` is optional when the harness can identify a primary or
+RichText field from the database schema.
+
 ## Limits and development
 
 - Formula/Timeline support covers schema persistence; calculated results and the
