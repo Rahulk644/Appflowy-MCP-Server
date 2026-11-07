@@ -33,6 +33,8 @@ DESTRUCTIVE = {
 
 _LEGACY_TOOLS = (
     ("get_workspaces", READ),
+    ("list_comments", READ),
+    ("append_comment", CREATE),
     ("get_workspace_folder", READ),
     ("get_database_fields", READ),
     ("get_database_row_ids", READ),

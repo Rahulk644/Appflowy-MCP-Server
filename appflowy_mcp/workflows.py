@@ -203,12 +203,38 @@ async def appflowy_search(request: m.SearchInput) -> dict:
 
 
 async def appflowy_fetch(request: m.FetchInput) -> dict:
-    """Read identity, folders, page metadata/Markdown, or database fields by ID."""
+    """Read identity, folders, pages, database fields, or paginated comments by ID."""
     if request.id != "self":
         identifier(request.id, "id")
     if request.database_id:
         identifier(request.database_id, "database_id")
-    return bounded(await backend().appflowy_fetch(**request.model_dump()))
+    if request.kind == "comments":
+        data = await backend().list_comments(
+            workspace(request),
+            request.id,
+            request.target_type,
+            limit=request.limit,
+            offset=request.offset,
+        )
+        comments = data["comments"]
+        result = _format_result(data, request.response_format)
+        while len(json.dumps(result, ensure_ascii=False)) > MAX_RESULT_CHARS:
+            if len(comments) > 1:
+                comments.pop()
+                data.update(has_more=True, next_offset=request.offset + len(comments))
+            else:
+                data["comments"] = [
+                    {
+                        "comment_id": str(comments[0].get("comment_id", ""))[:256],
+                        "content_omitted": True,
+                        "message": "Comment exceeds the response budget; read it in AppFlowy",
+                    }
+                ]
+            result = _format_result(data, request.response_format)
+        return result
+    return bounded(
+        await backend().appflowy_fetch(**request.model_dump(exclude={"target_type"}))
+    )
 
 
 async def create_space(ws: str, spec: m.PageSpec):
@@ -296,7 +322,17 @@ async def appflowy_update(request: m.UpdateInput) -> dict:
     """Rename, move, duplicate, trash/restore or edit a page; set space permissions."""
     ws, b, target = workspace(request), backend(), request.id
     command = request.command
-    if command == "rename":
+    if command == "append_comment":
+        result = await b.append_comment(
+            ws,
+            target,
+            request.target_type,
+            request.content,
+            request.reply_comment_id,
+            request.block_id,
+            request.database_view_id,
+        )
+    elif command == "rename":
         if not request.name.strip():
             raise ValueError("name is required")
         result = await b.rename_page(ws, target, request.name)

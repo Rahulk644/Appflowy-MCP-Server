@@ -15,7 +15,8 @@ Field deletion now names local schema/view dependencies that must be reconfigure
 first. Relation fields must be deleted in AppFlowy to update reciprocal links.
 
 For existing MCP clients, set `APPFLOWY_TOOL_PROFILE=legacy` to retain the original
-34 tool names and schemas. All 34 implementations now use async network I/O.
+34 tool names and schemas, plus `list_comments` and `append_comment`.
+All implementations use async network I/O.
 Direct Python callers must `await` functions that previously returned synchronously.
 Root `server.py` and `google_oauth.py` remain compatibility imports. Profiles are
 exclusive. Restart the server and reconnect the client after changing profiles.
