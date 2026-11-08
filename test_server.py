@@ -2064,3 +2064,51 @@ def test_page_mention_roundtrip():
         [("$", {"mention": {"type": "page", "page_id": "pg123"}})]
     )
     assert rendered == "[](mention:pg123)"
+
+
+def test_is_database_row_document_with_empty_row_data(monkeypatch):
+    # A real document's page-view payload carries `row_data` too (as {}), next to its
+    # encoded_collab. Taking that for a row made append_blocks write everything twice.
+    import httpx
+
+    def as_doc(_request):
+        return httpx.Response(
+            200, json={"data": {"data": {"encoded_collab": [1, 2], "row_data": {}}}}
+        )
+
+    _mock_http(monkeypatch, as_doc)
+    assert server._is_database_row("ws", "some-id") is False
+
+    def as_row(_request):
+        return httpx.Response(
+            200, json={"data": {"data": {"row_data": {"id": "r1", "cells": {}}}}}
+        )
+
+    _mock_http(monkeypatch, as_row)
+    assert server._is_database_row("ws", "some-id") is True
+
+
+def test_append_blocks_nested_goes_through_collab(monkeypatch):
+    # AppFlowy's REST append-block reverses nested blocks (a table's rows and cells)
+    # and reorders the blocks around them, so nested content takes the collab path.
+    calls = {}
+
+    def fake_add_blocks(ws, pid, markdown="", blocks=""):
+        calls["blocks"] = blocks
+        return "b1,b2"
+
+    def no_post(*_a, **_k):
+        raise AssertionError("REST append must not be used for nested blocks")
+
+    monkeypatch.setattr(server, "_require_workspace", lambda *_: None)
+    monkeypatch.setattr(server, "_post", no_post)
+    monkeypatch.setattr(server, "add_blocks", fake_add_blocks)
+
+    md = "Before\n\n- Parent\n  - Child\n"
+    assert server.append_blocks("ws", "page-id", markdown=md) == "b1,b2"
+    import json
+
+    assert [b["type"] for b in json.loads(calls["blocks"])] == [
+        "paragraph",
+        "bulleted_list",
+    ]
