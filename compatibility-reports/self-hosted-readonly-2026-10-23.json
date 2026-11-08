@@ -310,9 +310,38 @@
     }
   ],
   "deployment": {
-    "build": "not-exposed-by-health-endpoint",
+    "build": "appflowyinc/appflowy_cloud@sha256:739ab51324f10eb55818122145c9d69eca76c9f63266812e97f117a39412af16",
+    "evidence": {
+      "collected_at": "2026-10-23T20:41:03+00:00",
+      "source": "docker-image-inspect",
+      "images": [
+        {
+          "container_created_at": "2026-10-23T03:13:07.385147344Z",
+          "image_id": "sha256:cdf7ced185f93cdb29e286240557130fd87b57b9975b2b801ff2a2e4fb3f8fe1",
+          "name": "appflowyinc/appflowy_cloud",
+          "repository_digest": "sha256:739ab51324f10eb55818122145c9d69eca76c9f63266812e97f117a39412af16",
+          "version": "24.04"
+        },
+        {
+          "container_created_at": "2026-10-23T03:13:08.819792784Z",
+          "image_id": "sha256:904f2998c3eb2dce314a2886a5b7acc17e2746cd8e7398ac196aa16e3bf1c4ab",
+          "name": "appflowyinc/appflowy_web",
+          "repository_digest": "sha256:e63aa16b86af769b88d8a36a2dc74ed97628946a947c654a0e31116dfa2adc6b",
+          "revision": "8c53069f3c1664dd66a603fff2e02c7ef24918e5",
+          "version": "0.19.23"
+        },
+        {
+          "container_created_at": "2026-10-23T03:13:14.065951359Z",
+          "image_id": "sha256:14163774af272c19b7a5f0aea6c236cf4cc257b3a82b2a72f513a8f379952b3b",
+          "name": "appflowyinc/appflowy_worker",
+          "repository_digest": "sha256:7584caa84d78988cdf9d0b57c13372614b353350f80faadd9301a0fbbe510d76",
+          "revision": "71ffe86e47d1b7d92e108a166415c61ec6501915",
+          "version": "main"
+        }
+      ]
+    },
     "type": "self-hosted-docker",
-    "version": "latest"
+    "version": "24.04"
   },
   "generated_at": "2026-10-23T05:00:19+00:00",
   "modes": {
