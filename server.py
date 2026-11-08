@@ -632,7 +632,10 @@ def _is_database_row(workspace_id: str, view_id: str) -> bool:
     if not isinstance(meta, dict):
         return False
     node = meta.get("data") if isinstance(meta.get("data"), dict) else meta
-    return isinstance(node, dict) and "row_data" in node
+    # Documents can include empty row_data alongside their encoded collab.
+    return bool(node.get("row_data")) or (
+        "row_data" in node and not node.get("encoded_collab")
+    )
 
 
 # AppFlowy CollabType enum: Document=0, Database=1, DatabaseRow=4, UserAwareness=5.
@@ -1702,6 +1705,9 @@ def append_blocks(
         payload = json.loads(blocks)
     else:
         raise ValueError("provide `markdown` (preferred) or `blocks`")
+    # REST append can reorder nested blocks; collab preserves their order.
+    if any(isinstance(block, dict) and block.get("children") for block in payload):
+        return add_blocks(workspace_id, view_id, blocks=json.dumps(payload))
     result = _post(
         f"/api/workspace/{workspace_id}/page-view/{view_id}/append-block",
         {"blocks": payload},

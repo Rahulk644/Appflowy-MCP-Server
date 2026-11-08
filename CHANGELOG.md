@@ -7,6 +7,8 @@ All notable changes are documented here. The format loosely follows
 ## [Unreleased]
 
 ### Fixed
+- Prevent duplicate document appends when metadata includes empty `row_data`
+  (#16), and preserve nested block order by appending through collab (#17).
 - **Pinned `mcp>=1.13,<2`.** `mcp` 2.0.0 removed `mcp.server.fastmcp`, which this
   server is built on, so an unpinned install resolved 2.0.0 and died at import with
   `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` — breaking every fresh
@@ -18,7 +20,7 @@ All notable changes are documented here. The format loosely follows
   handed a row id it returns success and writes nothing — precisely the call used to
   fold a checklist onto a Kanban card. Rows are now re-routed through the collab
   layer, matching `add_block` / `add_blocks` / `get_page_markdown`. The page-view
-  path is byte-for-byte unchanged and issues no extra request.
+  path still uses REST for flat content.
 - **Dollar amounts were swallowed as inline math.** With dollarmath's defaults,
   `"ARR hit $560k this quarter, up from $380k last year."` parsed to
   `"ARR hit 380k last year."` — both figures and the intervening words silently gone.
