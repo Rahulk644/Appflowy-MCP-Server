@@ -100,8 +100,36 @@ def test_typed_select_and_dates():
         {"id": "d", "name": "Date", "field_type": 2},
     ]
     assert w.encode_cells(fields, {"Status": "Doing"}) == {"s": "opt"}
-    date = json.loads(w.encode_cells(fields, {"Date": "2026-11-09T00:00:00Z"})["d"])
-    assert date["timestamp"] == 1794182400
+    date = w.encode_cells(fields, {"Date": "2026-11-09T00:00:00Z"})["d"]
+    assert date == {
+        "data": "1794182400",
+        "end_timestamp": "",
+        "include_time": True,
+        "is_range": False,
+    }
+    date_range = w.encode_cells(
+        fields,
+        {
+            "Date": {
+                "timestamp": 10,
+                "end_timestamp": 20,
+                "is_range": True,
+                "include_time": False,
+            }
+        },
+    )["d"]
+    assert date_range == {
+        "data": "10",
+        "end_timestamp": "20",
+        "include_time": False,
+        "is_range": True,
+    }
+    for value in (
+        {"timestamp": 10, "is_range": True},
+        {"timestamp": 10, "end_timestamp": 9, "is_range": True},
+    ):
+        with pytest.raises(ValueError, match="end_timestamp"):
+            w.encode_cells(fields, {"Date": value})
     with pytest.raises(ValueError, match="missing or ambiguous"):
         w.encode_cells(fields, {"Status": "Missing"})
     with pytest.raises(ValueError, match="UTC offset"):

@@ -1,6 +1,9 @@
 """Smoke tests for the security-critical logic: Bearer auth gate, workspace
 guard, and that both HTTP transports boot cleanly."""
 
+import json
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -1183,6 +1186,47 @@ async def test_update_row_cells_confirms_and_creates_new_cell(monkeypatch):
     assert cells["F1"]["data"] == "new"
     # a brand-new cell is tagged with the type from _field_types (the collab), not 0
     assert cells["F2"]["data"] == "opt1" and cells["F2"]["field_type"] == 3
+
+
+@pytest.mark.asyncio
+async def test_date_attributes_are_patched_and_confirmed_without_losing_metadata(
+    monkeypatch,
+):
+    doc = _synthetic_row_doc()
+    cells = doc.get("data", type=server.Map)["data"]["cells"]
+    with doc.transaction():
+        cells["F1"]["field_type"] = 2
+        cells["F1"]["reminder_id"] = "keep-reminder"
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda *args: doc))
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *args: None))
+    monkeypatch.setattr(
+        server, "_field_types", _async_stub(lambda *args: {"F1": 2, "F2": 2})
+    )
+    patch = {
+        "data": "1794225600",
+        "end_timestamp": "",
+        "include_time": True,
+        "is_range": False,
+    }
+    await server.update_row_cells(
+        "ws-allowed", "db", "row1", json.dumps({"F1": patch, "F2": patch})
+    )
+    for fid in ("F1", "F2"):
+        assert all(cells[fid][key] == value for key, value in patch.items())
+        assert cells[fid]["field_type"] == 2
+    assert cells["F1"]["reminder_id"] == "keep-reminder"
+
+
+@pytest.mark.asyncio
+async def test_cell_attribute_object_cannot_modify_another_field_type(monkeypatch):
+    monkeypatch.setattr(server, "_field_types", _async_stub(lambda *args: {"F1": 0}))
+    update = AsyncMock()
+    monkeypatch.setattr(server, "_collab_web_update", update)
+    with pytest.raises(ValueError, match="only for DateTime"):
+        await server.update_row_cells(
+            "ws-allowed", "db", "row1", '{"F1": {"data": "10"}}'
+        )
+    update.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,19 @@
+{
+  "schema": "appflowy-mcp.browser-report.v1",
+  "deployment": {
+    "cloud": "0.20.5",
+    "web": "0.20.11"
+  },
+  "checks": [
+    "document_rich_text",
+    "number_create_update",
+    "datetime_create_range_update",
+    "select_labels_create_update",
+    "multiselect_labels_create_update",
+    "formula_evaluated_value",
+    "board_grouped_card",
+    "timeline_toolbar_and_row"
+  ],
+  "ok": true,
+  "credentials_recorded": false
+}

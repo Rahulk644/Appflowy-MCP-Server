@@ -14,11 +14,23 @@ services:
   appflowy_cloud:
     environment:
       AI_ENABLED: "false"
+      APPFLOWY_BACKGROUND_INDEXER_ENABLED: "false"
+      RUST_LOG: info
       NO_PROXY: localhost,127.0.0.1,::1,gotrue,appflowy_cloud,appflowy_search,minio,postgres,redis
   appflowy_worker:
+    depends_on:
+      appflowy_cloud:
+        condition: service_healthy
     environment:
+      APPFLOWY_BACKGROUND_INDEXER_ENABLED: "false"
+      RUST_LOG: info
       NO_PROXY: localhost,127.0.0.1,::1,gotrue,appflowy_cloud,appflowy_search,minio,postgres,redis
   appflowy_search:
+    depends_on:
+      appflowy_cloud:
+        condition: service_healthy
     environment:
+      APPFLOWY_BACKGROUND_INDEXER_ENABLED: "false"
+      RUST_LOG: info
       APPFLOWY_KEYWORD_INDEX_MAP_SIZE_BYTES: "134217728"
       NO_PROXY: localhost,127.0.0.1,::1,gotrue,appflowy_cloud,appflowy_search,minio,postgres,redis

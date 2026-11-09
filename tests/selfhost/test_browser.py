@@ -18,7 +18,7 @@ pytestmark = [
 
 
 async def test_web_renders_mcp_document_and_row(monkeypatch):
-    from playwright.async_api import async_playwright
+    from playwright.async_api import async_playwright, expect
 
     from appflowy_mcp import models as m
     from appflowy_mcp import server as b
@@ -81,16 +81,87 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
         created.append(database["view_id"])
         fields = await b.get_database_fields(ws, database["database_id"])
         title = next(field["id"] for field in fields if field.get("is_primary"))
+        db = database["database_id"]
+
+        async def add_field(name, kind):
+            result = await b.add_database_field(ws, db, name, kind)
+            return (
+                result.get("field_id", result.get("id"))
+                if isinstance(result, dict)
+                else result
+            )
+
+        number = await add_field("MCP Amount", 1)
+        date = await add_field("MCP Due", 2)
+        select = await add_field("MCP Status", 3)
+        multi = await add_field("MCP Tags", 4)
+        formula = await add_field("MCP Formula", 19)
+        await b.add_select_option(ws, db, select, "MCP Doing", "Purple")
+        await b.add_select_option(ws, db, select, "MCP Done", "Green")
+        await b.add_select_option(ws, db, multi, "MCP Blue", "Blue")
+        await b.add_select_option(ws, db, multi, "MCP Green", "Green")
+        await w.appflowy_database(
+            m.DatabaseInput(
+                workspace_id=ws,
+                command="formula",
+                database_id=db,
+                field_id=formula,
+                expression="1 + 2",
+            )
+        )
         result = await w.appflowy_rows(
             m.RowsInput(
                 workspace_id=ws,
                 database_id=database["database_id"],
                 command="create",
-                rows=[m.RowSpec(cells={title: "MCP browser visible row"})],
+                rows=[
+                    m.RowSpec(
+                        cells={
+                            title: "MCP browser visible row",
+                            number: 42.5,
+                            date: "2026-11-09T12:00:00Z",
+                            select: "MCP Doing",
+                            multi: ["MCP Blue", "MCP Green"],
+                        }
+                    )
+                ],
             )
         )
         assert result["ok"], result
         row_id = result["items"][0]["result"]["row_id"]
+        row = (await b._collab_doc(ws, row_id, 4)).get("data", type=b.Map)["data"]
+        assert row["cells"][number]["data"] == "42.5"
+        assert row["cells"][date]["data"] == "1794225600"
+        assert row["cells"][date]["include_time"] is True
+        _, schema = await b._open_database(ws, db)
+        options = w.field_options(schema["fields"][multi].to_py())
+        assert set(row["cells"][multi]["data"].split(",")) == {
+            option["id"] for option in options
+        }
+        board = await b.create_database_view(
+            ws, database["view_id"], "board", "MCP Board"
+        )
+        board_id = (
+            board.get("view_id", board.get("id")) if isinstance(board, dict) else board
+        )
+        await b.set_group_by(ws, db, board_id, select)
+        timeline = await b.create_database_view(
+            ws, database["view_id"], "timeline", "MCP Timeline"
+        )
+        timeline_id = (
+            timeline.get("view_id", timeline.get("id"))
+            if isinstance(timeline, dict)
+            else timeline
+        )
+        await w.appflowy_database(
+            m.DatabaseInput(
+                workspace_id=ws,
+                command="timeline",
+                database_id=db,
+                view_id=timeline_id,
+                settings={"field_id": date, "layout_ty": 4, "show_table": True},
+            )
+        )
         _, persisted = await b._open_database(ws, database["database_id"])
         assert any(
             order["id"] == row_id
@@ -106,7 +177,11 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
                 launch["executable_path"] = os.environ["APPFLOWY_TEST_CHROMIUM"]
             browser = await playwright.chromium.launch(**launch)
             try:
-                context = await browser.new_context()
+                context = await browser.new_context(
+                    locale="en-US",
+                    timezone_id="UTC",
+                    viewport={"width": 1920, "height": 1080},
+                )
                 await context.add_init_script(
                     "localStorage.setItem('token', "
                     + json.dumps(json.dumps(auth))
@@ -127,6 +202,80 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
                     await page.get_by_text(
                         "MCP browser visible row", exact=True
                     ).first.wait_for(timeout=45_000)
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{number}")
+                    ).to_have_text("42.5")
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{select}")
+                    ).to_have_text("MCP Doing")
+                    tags = page.get_by_test_id(f"grid-cell-{row_id}-{multi}")
+                    await expect(tags).to_contain_text("MCP Blue")
+                    await expect(tags).to_contain_text("MCP Green")
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{date}")
+                    ).to_have_text("11/09/2026 12:00 PM")
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{formula}")
+                    ).to_have_text("3")
+                    updated = await w.appflowy_rows(
+                        m.RowsInput(
+                            workspace_id=ws,
+                            database_id=db,
+                            command="update_cells",
+                            rows=[
+                                m.RowSpec(
+                                    row_id=row_id,
+                                    cells={
+                                        number: 43,
+                                        select: "MCP Done",
+                                        multi: ["MCP Green"],
+                                        date: {
+                                            "timestamp": 1794225600,
+                                            "end_timestamp": 1794312000,
+                                            "is_range": True,
+                                            "include_time": False,
+                                        },
+                                    },
+                                )
+                            ],
+                        )
+                    )
+                    assert updated["ok"], updated
+                    row = (await b._collab_doc(ws, row_id, 4)).get("data", type=b.Map)[
+                        "data"
+                    ]
+                    assert row["cells"][date]["end_timestamp"] == "1794312000"
+                    assert row["cells"][date]["is_range"] is True
+                    assert row["cells"][date]["include_time"] is False
+                    await page.reload(wait_until="domcontentloaded")
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{number}")
+                    ).to_have_text("43")
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{select}")
+                    ).to_have_text("MCP Done")
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{multi}")
+                    ).to_have_text("MCP Green")
+                    await expect(
+                        page.get_by_test_id(f"grid-cell-{row_id}-{date}")
+                    ).to_have_text("11/09/2026 → 11/10/2026")
+                    await page.goto(
+                        f"{base}/app/{ws}/{board_id}", wait_until="domcontentloaded"
+                    )
+                    column = page.get_by_test_id("board-column").filter(
+                        has=page.get_by_text("MCP Done", exact=True)
+                    )
+                    await column.get_by_text(
+                        "MCP browser visible row", exact=True
+                    ).wait_for(timeout=45_000)
+                    await page.goto(
+                        f"{base}/app/{ws}/{timeline_id}", wait_until="domcontentloaded"
+                    )
+                    await page.get_by_test_id("timeline-toolbar").wait_for(
+                        timeout=45_000
+                    )
+                    await page.get_by_test_id(f"timeline-row-{row_id}").wait_for()
                 except Exception:
                     directory = Path(
                         os.environ.get(
@@ -137,7 +286,7 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
                     (directory / "body.txt").write_text(
                         await page.locator("body").inner_text()
                     )
-                    await page.screenshot(path=str(directory / "grid.png"))
+                    await page.screenshot(path=str(directory / "view.png"))
                     raise
             finally:
                 await browser.close()
@@ -145,3 +294,27 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
         for page_id in reversed(created):
             await b.trash_page(ws, page_id)
         await b._close_async_client()
+    output = os.environ.get("APPFLOWY_BROWSER_REPORT")
+    if output:
+        Path(output).write_text(
+            json.dumps(
+                {
+                    "schema": "appflowy-mcp.browser-report.v1",
+                    "deployment": {"cloud": "0.20.5", "web": "0.20.11"},
+                    "checks": [
+                        "document_rich_text",
+                        "number_create_update",
+                        "datetime_create_range_update",
+                        "select_labels_create_update",
+                        "multiselect_labels_create_update",
+                        "formula_evaluated_value",
+                        "board_grouped_card",
+                        "timeline_toolbar_and_row",
+                    ],
+                    "ok": True,
+                    "credentials_recorded": False,
+                },
+                indent=2,
+            )
+            + "\n"
+        )

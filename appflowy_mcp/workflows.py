@@ -561,7 +561,29 @@ def encode_cells(fields: list[dict], cells: dict) -> dict:
             for key in ("include_time", "is_range"):
                 if key in value and type(value[key]) is not bool:
                     raise ValueError(f"DateTime {key} must be boolean")
-            value = json.dumps(value, allow_nan=False)
+            unknown = value.keys() - {
+                "timestamp",
+                "end_timestamp",
+                "include_time",
+                "is_range",
+            }
+            if unknown:
+                raise ValueError(
+                    f"Unknown DateTime attributes: {', '.join(sorted(unknown))}"
+                )
+            is_range = value.get("is_range", False)
+            end = value.get("end_timestamp")
+            if is_range and (end is None or end < value["timestamp"]):
+                raise ValueError(
+                    "DateTime ranges need an end_timestamp at or after timestamp"
+                )
+            # AppFlowy stores date attributes beside data, not as JSON inside it.
+            value = {
+                "data": str(int(value["timestamp"])),
+                "end_timestamp": str(int(end)) if is_range else "",
+                "include_time": value.get("include_time", True),
+                "is_range": is_range,
+            }
         else:
             raise ValueError(
                 f"Typed writes for field type {kind} are not available; existing cells are preserved"

@@ -38,12 +38,16 @@ jobs:
       env:
         APPFLOWY_INTEGRATION_REPORT: compatibility-reports/selfhost-ci.json
         APPFLOWY_BROWSER_TEST: 'true'
+        APPFLOWY_BROWSER_REPORT: compatibility-reports/browser-ci.json
+        APPFLOWY_BROWSER_ARTIFACT_DIR: compatibility-reports/browser-failure
       run: python scripts/selfhost.py test
     - uses: actions/upload-artifact@v4
       if: always()
       with:
         name: selfhost-compatibility
-        path: compatibility-reports/selfhost-ci.json
+        path: |
+          compatibility-reports/*-ci.json
+          compatibility-reports/browser-failure/
     - name: Remove disposable services and data
       if: always()
       run: python scripts/selfhost.py down

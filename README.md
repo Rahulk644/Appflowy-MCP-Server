@@ -163,8 +163,9 @@ HTTPS. See [SECURITY.md](SECURITY.md).
 
 ## Limits and development
 
-- Formula/Timeline support covers schema persistence; calculated results and the
-  complete view UI still need deployment-specific validation.
+- Disposable CI verifies typed Grid cells, Board grouping, a calculated Formula
+  and a rendered Timeline. Complex formulas and all view interactions still need
+  deployment-specific validation; see [COMPATIBILITY.md](COMPATIBILITY.md).
 - Row details can lag live collaboration state. Cell writes confirm against the
   row collab; do not recreate a row solely because a REST read is stale.
 - Document replacement checks a fetched snapshot and then sends a merging update;

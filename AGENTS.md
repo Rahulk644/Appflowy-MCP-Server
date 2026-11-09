@@ -26,6 +26,8 @@ current project; temporary progress and conversation summaries do not belong her
 - PyPI publication is explicitly deferred; retain the unconditional workflow guard.
 - Cloud/AI checks require suitable disposable deployments. Self-hosted success is
   not SaaS certification. Do not commit credentials or raw private response bodies.
+- DateTime cells store the timestamp in `data` and range/time attributes beside it;
+  JSON serialized into `data` can persist successfully while rendering an empty date.
 
 ## Validation
 

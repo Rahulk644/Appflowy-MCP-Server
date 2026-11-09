@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix DateTime cell writes to persist timestamp, range and time flags as separate
+  collaboration attributes; preserve unrelated cell metadata and confirm all
+  changed attributes on readback.
+- Validate visible Number, DateTime/range, select and multi-select create/update,
+  Board grouping, an evaluated Formula and a configured Timeline in disposable CI.
+- Start search/worker services after Cloud migrations are ready; search checks use
+  a unique document token and allow for asynchronous indexing.
 - Expire abandoned OAuth state/codes; prune expired token records and bound public
   registration/transient caches.
 - Rotate refresh tokens with fixed login deadlines, hashed replay records, and
