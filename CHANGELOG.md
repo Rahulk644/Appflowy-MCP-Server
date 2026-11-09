@@ -54,6 +54,7 @@ All notable changes are documented here. The format loosely follows
   no longer mis-typed.
 
 ### Added
+- PyPI publication is opt-in via `ENABLE_PYPI_PUBLISH`; GHCR releases are independent.
 - Installable Python package and `appflowy-mcp` command for stdio and Streamable
   HTTP, with `--env-file`, `--help`, and `--version`. Wheels include the OAuth
   provider and agent guide; existing source entry points remain supported.

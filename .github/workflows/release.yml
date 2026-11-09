@@ -32,6 +32,7 @@ jobs:
         PY
 
   pypi:
+    if: vars.ENABLE_PYPI_PUBLISH == 'true'
     needs: [verify, version]
     runs-on: ubuntu-latest
     environment: pypi

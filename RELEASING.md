@@ -28,6 +28,10 @@ settings to check that the optional provider is packaged.
 
 ## One-time publisher setup
 
+PyPI publication is deferred and disabled by default. Container releases work
+independently. Enable the repository variable `ENABLE_PYPI_PUBLISH=true` only when
+ready to publish to PyPI and after completing the publisher setup below.
+
 1. Create a GitHub Actions environment named `pypi` in this repository. Set any
    desired release reviewers on that environment.
 2. In PyPI's **Publishing** settings, add a pending Trusted Publisher:
@@ -48,7 +52,8 @@ settings to check that the optional provider is packaged.
 
 Publishing the GitHub Release triggers `.github/workflows/release.yml`. It reruns
 CI for the release, verifies that the tag matches the package version, and publishes
-the checked Python distribution to PyPI and a Linux amd64/arm64 image to GHCR.
+the checked Python distribution to PyPI (only when explicitly enabled) and a
+Linux amd64/arm64 image to GHCR.
 Stable container releases receive version and `latest` tags. These two registries
 publish independently; inspect both jobs, and rerun only a failed job if one succeeds.
 An existing PyPI version cannot be overwritten.
