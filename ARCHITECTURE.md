@@ -105,3 +105,6 @@ repository-root install shim. Release publishing validates versions, gates on pa
 compatibility checks, then publishes GHCR and registry metadata. PyPI remains
 disabled. Published tags/images are immutable release artifacts; fixes on `main`
 need a new patch version before they reach installed stable clients.
+Distribution uploads reuse gated CI artifacts. Existing asset contents and image
+revision labels are checked before a retry; no versioned artifact is overwritten.
+Only the latest stable release may update the mutable GHCR `latest` alias.
