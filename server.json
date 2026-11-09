@@ -7,11 +7,11 @@
     "url": "https://github.com/Rahulk644/Appflowy-MCP-Server",
     "source": "github"
   },
-  "version": "2.0.0",
+  "version": "2.0.1",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/rahulk644/appflowy-mcp-server:2.0.0",
+      "identifier": "ghcr.io/rahulk644/appflowy-mcp-server:2.0.1",
       "transport": {"type": "stdio"},
       "packageArguments": [
         {"type": "positional", "valueHint": "command", "value": "appflowy-mcp"}

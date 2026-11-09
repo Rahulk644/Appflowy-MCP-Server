@@ -119,7 +119,7 @@ mcp = MCPServer(
     else APPFLOWY_INSTRUCTIONS,
     icons=[{"src": ICON_DATA_URI, "mimeType": "image/svg+xml", "sizes": ["any"]}],
     website_url="https://github.com/Rahulk644/appflowy-mcp-server",
-    version="2.0.0",
+    version="2.0.1",
 )
 
 
