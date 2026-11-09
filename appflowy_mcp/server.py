@@ -36,6 +36,8 @@ from pycrdt import Array, Doc, Map, Text
 from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException
 
+from .database_schema import field_dependencies
+
 BASE_URL = os.environ.get("APPFLOWY_BASE_URL", "https://beta.appflowy.cloud").rstrip(
     "/"
 )
@@ -1392,7 +1394,9 @@ async def delete_database_field(
 ) -> str:
     """Deletes a field/column (Tier 2 / collab — AppFlowy has no REST endpoint for this).
     Removes it from the schema and from every view's column order. The primary/title
-    field cannot be deleted. Rows keep the now-orphaned cell harmlessly. There is no
+    field cannot be deleted. Filters, sorts, groups, formulas and layout references
+    must be removed first; Relation fields must be deleted in AppFlowy so reciprocal
+    relations are updated. Rows keep the now-orphaned cell harmlessly. There is no
     field trash, so this is irreversible via the API. Returns the deleted field_id."""
     _require_workspace(workspace_id)
     doc, root = await _open_database(workspace_id, database_id)
@@ -1401,6 +1405,17 @@ async def delete_database_field(
         raise ValueError(f"field {field_id} not found in this database")
     if "is_primary" in fields[field_id] and fields[field_id]["is_primary"]:
         raise ValueError("the primary (title) field cannot be deleted")
+    if int(fields[field_id].get("ty", 0)) == 10:
+        raise ValueError(
+            "Delete Relation fields in AppFlowy so reciprocal relations are updated"
+        )
+    dependencies = field_dependencies(root.to_py(), field_id)
+    if dependencies:
+        raise ValueError(
+            "Field has dependencies; remove or reconfigure them in AppFlowy before deletion: "
+            + ", ".join(dependencies[:10])
+            + (f" (+{len(dependencies) - 10} more)" if len(dependencies) > 10 else "")
+        )
     sv = doc.get_state()
     with doc.transaction():
         del fields[field_id]
@@ -1412,10 +1427,9 @@ async def delete_database_field(
                 for i in range(len(orders) - 1, -1, -1):
                     if orders[i]["id"] == field_id:
                         del orders[i]
-            # Remove direct per-view settings. Dependent filters/sorts/grouping
-            # are not rewritten here; see the dependency-cleanup roadmap item.
-            if "field_settings" in view and field_id in view["field_settings"]:
-                del view["field_settings"][field_id]
+            for settings_key in ("field_settings", "form_field_settings"):
+                if settings_key in view and field_id in view[settings_key]:
+                    del view[settings_key][field_id]
     (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
     return field_id
 

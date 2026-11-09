@@ -30,6 +30,9 @@ current project; temporary progress and conversation summaries do not belong her
   JSON serialized into `data` can persist successfully while rendering an empty date.
 - Keep compact command validators aligned with consumed inputs. Reject meaningful
   unused fields before mutation; optional defaults may be supplied by MCP clients.
+- Field deletion must reject active local schema/view references before mutation.
+  Only order/direct settings are cleaned automatically; Relation deletion needs
+  reciprocal cleanup in AppFlowy. Do not claim cross-database dependency inspection.
 
 ## Validation
 

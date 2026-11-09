@@ -171,6 +171,9 @@ HTTPS. See [SECURITY.md](SECURITY.md).
   deployment-specific validation; see [COMPATIBILITY.md](COMPATIBILITY.md).
 - Row details can lag live collaboration state. Cell writes confirm against the
   row collab; do not recreate a row solely because a REST read is stale.
+- Field deletion refuses local schema/view dependencies and names the settings to
+  reconfigure first. Delete Relation fields in AppFlowy for reciprocal-link cleanup;
+  incoming references from other databases are not inspected.
 - Document replacement checks a fetched snapshot and then sends a merging update;
   it is not an atomic server-side compare-and-swap.
 - Tables fall back to text. Rich media, columns, PDF/ZIP conversion and large-file
