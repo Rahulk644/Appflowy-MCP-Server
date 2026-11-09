@@ -21,6 +21,7 @@ MCP transport → profile/tool registration → typed workflow → workspace gua
 | `appflowy_mcp/api.py` | Shared async HTTP session, AppFlowy login/refresh, workspace policy and API errors |
 | `appflowy_mcp/models.py` | Compact input schemas, bounds and permission objects |
 | `appflowy_mcp/workflows.py` | Compact orchestration, typed cells, pagination and batch results |
+| `appflowy_mcp/profiles.py` | Shared behavior annotations and explicit legacy tool bindings |
 | `appflowy_mcp/database_schema.py` | Read-only field dependency inspection and Formula property references |
 | `appflowy_mcp/documents.py` | Local Markdown parsing/rendering, block trees and document CRDT conversion |
 | `appflowy_mcp/collab.py` | Snapshot decoding, CRDT values and collaboration identity helpers |
@@ -32,9 +33,9 @@ MCP transport → profile/tool registration → typed workflow → workspace gua
 | `scripts/` | Build/install checks, manifest measurement, decoder checks and disposable stack runner |
 | `live_compatibility.py` | Operator harness for an explicitly configured deployment |
 
-Legacy registration still shares the backend module. Keep further extraction
-behavior-preserving; do not add speculative factories. The
-compatibility entry points and async-name aliases have callers and remain intentional.
+Profile bindings reuse the same async backend handlers without wrapper functions
+or duplicated operations. Compatibility entry points and async-name aliases have
+callers and remain intentional.
 
 ## Profiles and annotations
 

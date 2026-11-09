@@ -46,6 +46,7 @@ from .documents import (
     _md_to_blocks,
     _set_text,
 )
+from .profiles import register_legacy
 
 # Direct-Python compatibility helpers; mutable session state lives only in api.
 BASE_URL = a.BASE_URL
@@ -167,51 +168,9 @@ def agent_guide() -> str:
     return _agent_guide_md()
 
 
-# Tool behavior hints for MCP clients (advisory — they help an agent choose safe
-# operations; they are NOT a security boundary). readOnly = performs no writes;
-# destructive = makes an irreversible change; idempotent = repeating with the same
-# args reaches the same state; openWorld = calls the external AppFlowy service (always
-# true here). Presets are applied per tool via @_legacy_tool(annotations=...).
-_READ = {
-    "readOnlyHint": True,
-    "destructiveHint": False,
-    "idempotentHint": True,
-    "openWorldHint": True,
-}
-_CREATE = {
-    "readOnlyHint": False,
-    "destructiveHint": False,
-    "idempotentHint": False,
-    "openWorldHint": True,
-}
-_WRITE = {
-    "readOnlyHint": False,
-    "destructiveHint": False,
-    "idempotentHint": True,
-    "openWorldHint": True,
-}
-_DESTRUCTIVE = {
-    "readOnlyHint": False,
-    "destructiveHint": True,
-    "idempotentHint": True,
-    "openWorldHint": True,
-}
-
-
 _tool_profile = os.environ.get("APPFLOWY_TOOL_PROFILE", "compact")
 if _tool_profile not in {"compact", "legacy"}:
     raise ValueError("APPFLOWY_TOOL_PROFILE must be compact or legacy")
-
-
-def _legacy_tool(*, annotations):
-    def decorate(function):
-        if _tool_profile == "legacy" and (
-            not a._read_only() or annotations["readOnlyHint"]
-        ):
-            return mcp.tool(annotations=annotations)(function)
-        return function
-
-    return decorate
 
 
 # ---- Optional OAuth (Google-federated) — active only if GOOGLE_CLIENT_ID set --
@@ -414,7 +373,6 @@ def _write_select(field, tk, data):
     to[tk]["content"] = json.dumps(data, separators=(",", ":"))
 
 
-@_legacy_tool(annotations=_READ)
 async def get_workspaces() -> list:
     """Retrieves your AppFlowy workspaces (filtered to ALLOWED_WORKSPACE_IDS if set)."""
     data = (await a._api_call("GET", "/api/workspace")).json().get("data", [])
@@ -424,7 +382,6 @@ async def get_workspaces() -> list:
     return data
 
 
-@_legacy_tool(annotations=_READ)
 async def get_workspace_folder(workspace_id: str, depth: int = 1) -> dict:
     """
     Fetches the folder structure (pages and databases) of a workspace.
@@ -442,7 +399,6 @@ async def get_workspace_folder_async(workspace_id: str, depth: int = 1) -> dict:
     return await get_workspace_folder(workspace_id, depth)
 
 
-@_legacy_tool(annotations=_READ)
 async def get_database_fields(workspace_id: str, database_id: str) -> list:
     """Retrieves the fields/columns available in a database."""
     a._require_workspace(workspace_id)
@@ -450,7 +406,6 @@ async def get_database_fields(workspace_id: str, database_id: str) -> list:
     return (await a._api_call("GET", path)).json().get("data", [])
 
 
-@_legacy_tool(annotations=_READ)
 async def get_database_row_ids(workspace_id: str, database_id: str) -> list:
     """Retrieves the row IDs in a database."""
     a._require_workspace(workspace_id)
@@ -458,7 +413,6 @@ async def get_database_row_ids(workspace_id: str, database_id: str) -> list:
     return (await a._api_call("GET", path)).json().get("data", [])
 
 
-@_legacy_tool(annotations=_READ)
 async def get_database_row_details(
     workspace_id: str, database_id: str, row_ids: str, with_doc: bool = False
 ) -> list:
@@ -474,7 +428,6 @@ async def get_database_row_details(
     return (await a._api_call("GET", path, params=params)).json().get("data", [])
 
 
-@_legacy_tool(annotations=_CREATE)
 async def create_database_row(
     workspace_id: str, database_id: str, row_data: str
 ) -> str:
@@ -492,7 +445,6 @@ async def create_database_row(
     return (await a._api_call("POST", path, json=data)).json().get("data", "")
 
 
-@_legacy_tool(annotations=_WRITE)
 async def upsert_database_row(
     workspace_id: str, database_id: str, row_data: str
 ) -> str:
@@ -518,7 +470,6 @@ async def upsert_database_row(
     return (await a._api_call("PUT", path, json=data)).json().get("data", "")
 
 
-@_legacy_tool(annotations=_READ)
 async def list_updated_rows(
     workspace_id: str, database_id: str, after: str = ""
 ) -> list:
@@ -550,7 +501,6 @@ _DB_LAYOUTS = {
 }
 
 
-@_legacy_tool(annotations=_READ)
 async def list_databases(workspace_id: str) -> list:
     """Lists databases in the workspace with their id and views. Use this to map a
     Board/Grid view to its database_id (a folder view_id is NOT the database_id)."""
@@ -559,7 +509,6 @@ async def list_databases(workspace_id: str) -> list:
     return (await a._api_call("GET", path)).json().get("data", [])
 
 
-@_legacy_tool(annotations=_CREATE)
 async def create_page(
     workspace_id: str,
     parent_view_id: str,
@@ -589,7 +538,6 @@ async def create_page(
     return res["view_id"] if isinstance(res, dict) else res
 
 
-@_legacy_tool(annotations=_CREATE)
 async def create_database(
     workspace_id: str, parent_view_id: str, name: str, layout: str = "grid"
 ) -> str:
@@ -608,7 +556,6 @@ async def create_database(
     return res["view_id"] if isinstance(res, dict) else res
 
 
-@_legacy_tool(annotations=_CREATE)
 async def create_database_view(
     workspace_id: str, view_id: str, layout: str, name: str = ""
 ) -> str:
@@ -670,7 +617,6 @@ async def create_database_view(
     return result["view_id"] if isinstance(result, dict) else result
 
 
-@_legacy_tool(annotations=_CREATE)
 async def add_database_field(
     workspace_id: str,
     database_id: str,
@@ -690,7 +636,6 @@ async def add_database_field(
     )
 
 
-@_legacy_tool(annotations=_WRITE)
 async def update_database_field(
     workspace_id: str,
     database_id: str,
@@ -725,7 +670,6 @@ async def update_database_field(
     return field_id
 
 
-@_legacy_tool(annotations=_DESTRUCTIVE)
 async def delete_database_field(
     workspace_id: str, database_id: str, field_id: str
 ) -> str:
@@ -771,7 +715,6 @@ async def delete_database_field(
     return field_id
 
 
-@_legacy_tool(annotations=_WRITE)
 async def add_select_option(
     workspace_id: str,
     database_id: str,
@@ -811,7 +754,6 @@ async def add_select_option(
     return oid
 
 
-@_legacy_tool(annotations=_DESTRUCTIVE)
 async def delete_select_option(
     workspace_id: str, database_id: str, field_id: str, option: str
 ) -> str:
@@ -839,7 +781,6 @@ async def delete_select_option(
     return match["id"]
 
 
-@_legacy_tool(annotations=_WRITE)
 async def set_group_by(
     workspace_id: str, database_id: str, view_id: str, field_id: str
 ) -> str:
@@ -882,7 +823,6 @@ async def set_group_by(
     return view_id
 
 
-@_legacy_tool(annotations=_CREATE)
 async def append_blocks(
     workspace_id: str, view_id: str, markdown: str = "", blocks: str = ""
 ) -> str:
@@ -923,7 +863,6 @@ async def append_blocks(
     return result
 
 
-@_legacy_tool(annotations=_CREATE)
 async def create_space(workspace_id: str, name: str, is_private: bool = False) -> str:
     """Creates a top-level Space; returns its view_id."""
     a._require_workspace(workspace_id)
@@ -938,7 +877,6 @@ async def create_space(workspace_id: str, name: str, is_private: bool = False) -
     )
 
 
-@_legacy_tool(annotations=_WRITE)
 async def move_page(
     workspace_id: str, view_id: str, new_parent_view_id: str, prev_view_id: str = ""
 ) -> str:
@@ -953,7 +891,6 @@ async def move_page(
     )
 
 
-@_legacy_tool(annotations=_CREATE)
 async def duplicate_page(workspace_id: str, view_id: str, suffix: str = "") -> str:
     """Duplicates a page and its subtree."""
     a._require_workspace(workspace_id)
@@ -963,7 +900,6 @@ async def duplicate_page(workspace_id: str, view_id: str, suffix: str = "") -> s
     )
 
 
-@_legacy_tool(annotations=_WRITE)
 async def trash_page(workspace_id: str, view_id: str) -> str:
     """Moves a page to trash (reversible in-app; there is no hard delete via REST)."""
     a._require_workspace(workspace_id)
@@ -972,7 +908,6 @@ async def trash_page(workspace_id: str, view_id: str) -> str:
     )
 
 
-@_legacy_tool(annotations=_WRITE)
 async def rename_page(workspace_id: str, view_id: str, name: str) -> str:
     """Renames any page, database/board, or space (by its view_id). To retitle a Board
     CARD, set the row's primary cell via update_row_cells instead — a card is a row,
@@ -984,7 +919,6 @@ async def rename_page(workspace_id: str, view_id: str, name: str) -> str:
     )
 
 
-@_legacy_tool(annotations=_WRITE)
 async def restore_page(workspace_id: str, view_id: str) -> str:
     """Restores a page from trash — the inverse of trash_page."""
     a._require_workspace(workspace_id)
@@ -993,7 +927,6 @@ async def restore_page(workspace_id: str, view_id: str) -> str:
     )
 
 
-@_legacy_tool(annotations=_READ)
 async def get_page(workspace_id: str, view_id: str) -> dict:
     """Gets a page's metadata (name, icon, layout, ...). For the page's CONTENT as
     Markdown, use get_page_markdown."""
@@ -1002,7 +935,6 @@ async def get_page(workspace_id: str, view_id: str) -> dict:
     return (await a._api_call("GET", path)).json().get("data", {})
 
 
-@_legacy_tool(annotations=_READ)
 async def get_page_markdown(workspace_id: str, page_id: str) -> str:
     """Reads a Document page — or a database row's body — as Markdown (the inverse
     of create_page(markdown=...)). page_id may be a document view id OR a database
@@ -1500,7 +1432,6 @@ _CELL_WRITE_RETRIES = 4
 _CELL_WRITE_BACKOFF = 0.4  # seconds, multiplied by the (1-based) attempt number
 
 
-@_legacy_tool(annotations=_WRITE)
 async def update_row_cells(
     workspace_id: str, database_id: str, row_id: str, cells: str
 ) -> str:
@@ -1594,7 +1525,6 @@ async def update_row_cells(
     )
 
 
-@_legacy_tool(annotations=_DESTRUCTIVE)
 async def delete_row(workspace_id: str, database_id: str, row_id: str) -> str:
     """Deletes a row from a database — works for ANY row, including UI-created ones
     (Tier 2 / collab). Removes it from every view's row_orders and deletes the
@@ -1677,7 +1607,6 @@ async def _delete_row_strict(workspace_id: str, database_id: str, row_id: str) -
     return {"row_id": row_id, "removed_view_orders": removed, "verified": True}
 
 
-@_legacy_tool(annotations=_CREATE)
 async def add_block(
     workspace_id: str,
     page_id: str,
@@ -1727,7 +1656,6 @@ async def add_block(
     return bid
 
 
-@_legacy_tool(annotations=_WRITE)
 async def add_blocks(
     workspace_id: str,
     page_id: str,
@@ -1770,7 +1698,6 @@ async def add_blocks(
     return ",".join(ids)
 
 
-@_legacy_tool(annotations=_WRITE)
 async def edit_block_text(
     workspace_id: str, page_id: str, block_id: str, text: str
 ) -> str:
@@ -1796,7 +1723,6 @@ async def edit_block_text(
     return block_id
 
 
-@_legacy_tool(annotations=_WRITE)
 async def replace_text(
     workspace_id: str,
     page_id: str,
@@ -1844,7 +1770,6 @@ async def replace_text(
     return f"replaced in {len(hits)} block(s)"
 
 
-@_legacy_tool(annotations=_DESTRUCTIVE)
 async def delete_block(workspace_id: str, page_id: str, block_id: str) -> str:
     """Deletes a block from a document (removes it from its parent, plus its text
     and children references). page_id may be a document view id or a row id."""
@@ -1875,11 +1800,13 @@ async def delete_block(workspace_id: str, page_id: str, block_id: str) -> str:
     return f"deleted block {block_id}"
 
 
-# Register compact workflows only after the shared backend is fully defined.
+# Register one exclusive profile after the shared backend is fully defined.
 if _tool_profile == "compact":
     from .workflows import register
 
     register(mcp)
+else:
+    register_legacy(mcp, globals(), read_only=a._read_only())
 
 # ---- HTTP app (Streamable HTTP + SSE), Bearer-gated -------------------------
 

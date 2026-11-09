@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Register legacy handlers through an explicit profile table and share behavior
+  annotations with compact workflows; keep profile manifests unchanged.
 - Give AppFlowy HTTP/session state a single owner in `api.py`; retain direct Python
   helper aliases and close the shared client on both transport shutdown paths.
 - Isolate local Markdown/block conversion and collaboration decoding from the
