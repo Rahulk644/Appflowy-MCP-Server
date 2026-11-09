@@ -72,12 +72,37 @@ The server logs into AppFlowy Cloud with a **dedicated bot account** and exposes
 
 ## 🚀 Quick start
 
-### Local (stdio) — most private, nothing exposed
+### Local (stdio)
+
+Install directly from GitHub with `uvx` (no clone or virtualenv setup):
+
+```bash
+uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server appflowy-mcp
+```
+
+Set `APPFLOWY_EMAIL` / `APPFLOWY_PASSWORD` in the environment or a `.env` file in
+the directory you run it from. Set `ALLOWED_WORKSPACE_IDS` to limit access.
+Use `--env-file /absolute/path/to/.env` to select another configuration file;
+existing environment variables take precedence.
+
+For a checked-out repository:
+
 ```bash
 cp .env.example .env      # fill in APPFLOWY_EMAIL / APPFLOWY_PASSWORD
-pip install -r requirements.txt
-python server.py
+uv run appflowy-mcp
 ```
+
+`python server.py` and `uvicorn server:app` remain supported for existing deployments.
+An installed package also supports `python -m appflowy_mcp`, `--help`, and `--version`.
+
+### Installed HTTP server
+
+```bash
+appflowy-mcp --transport streamable-http --env-file /absolute/path/to/.env
+```
+
+This binds to `127.0.0.1:8000`; use `--host` / `--port` to change it. The MCP
+endpoint remains `/mcp/`, with legacy SSE at `/sse/`.
 
 ### Docker / VPS — for remote & unattended agents
 ```bash
@@ -85,6 +110,16 @@ cp .env.example .env      # fill in credentials + MCP_SECRET_TOKEN (and OAuth, o
 docker compose up -d --build
 ```
 `docker-compose.yaml` includes optional Traefik labels. **Keep the port off the open internet** — front it with an identity gate (e.g. Cloudflare Tunnel + Access) and/or the built-in auth. A guided `deploy_vps.sh` is included for a first deploy.
+
+The image starts HTTP by default. For a local stdio client, override the command:
+
+```bash
+docker run --rm -i --env-file .env appflowy-mcp appflowy-mcp
+```
+
+Build the local image first with `docker build -t appflowy-mcp .`.
+PyPI and prebuilt GHCR installation instructions are in [RELEASING.md](RELEASING.md);
+they become usable after the first release has been published.
 
 ## ⚙️ Configuration (`.env`)
 
@@ -123,7 +158,13 @@ Convenient, but the token rides in the URL/logs — treat the whole link like a 
 
 **Local (stdio)**
 ```json
-{ "mcpServers": { "appflowy": { "command": "python", "args": ["/absolute/path/to/server.py"] } } }
+{ "mcpServers": { "appflowy": {
+  "command": "uvx",
+  "args": [
+    "--from", "git+https://github.com/Rahulk644/Appflowy-MCP-Server",
+    "appflowy-mcp", "--env-file", "/absolute/path/to/.env"
+  ]
+}}}
 ```
 
 ## 🔐 Security
@@ -138,11 +179,17 @@ Full details and vulnerability reporting: [SECURITY.md](SECURITY.md).
 ## 🧪 Development
 
 ```bash
-pip install -r requirements.txt
+pip install -e '.[dev]'
 ruff format . && ruff check .
 pytest -q
+python -m build
+python -m twine check dist/*
+python scripts/check_package.py
 ```
-CI runs lint, format-check, and tests on every push/PR.
+CI runs lint, format-check, tests, clean package installation checks on Linux
+(Python 3.10 / 3.12) and Windows (3.12), and Docker MCP checks on every push/PR.
+Package and Docker smoke checks use dummy configuration, exercise stdio and
+Streamable HTTP, and do not log into AppFlowy. Live checks remain opt-in.
 
 ### Live compatibility validation
 
