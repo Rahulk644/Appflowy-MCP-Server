@@ -282,6 +282,27 @@ async def _api_json(method: str, path: str, **kwargs) -> Any:
     return (await server._api_call_async(method, path, **kwargs)).json().get("data")
 
 
+async def _api_json_with_access_token(
+    method: str, path: str, access_token: str, **kwargs
+) -> Any:
+    """Call one API route with an exact token and no authentication fallback."""
+    client = await server._get_async_client()
+    response = await client.request(
+        method,
+        f"{server.BASE_URL}{path}",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": server.USER_AGENT,
+            "Content-Type": "application/json",
+        },
+        **kwargs,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    server._raise_appflowy_application_error(payload, path)
+    return payload.get("data")
+
+
 async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any]:
     recorder = CompatibilityRecorder()
 
@@ -292,18 +313,27 @@ async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any
         operation=lambda: _api_json("GET", "/api/workspace"),
     )
     if config.validate_token_refresh:
+        refreshed_access_token = None
+
+        async def validate_token_refresh() -> dict[str, bool]:
+            nonlocal refreshed_access_token
+            result, refreshed_access_token = await _validate_token_refresh()
+            return result
+
         refreshed = await recorder.record(
             name="auth_token_refresh",
             method="POST",
             route="/gotrue/token?grant_type=refresh_token",
-            operation=_validate_token_refresh,
+            operation=validate_token_refresh,
         )
-        if refreshed is not None:
+        if refreshed is not None and refreshed_access_token is not None:
             await recorder.record(
                 name="auth_after_token_refresh",
                 method="GET",
                 route="/api/workspace",
-                operation=lambda: _api_json("GET", "/api/workspace"),
+                operation=lambda: _api_json_with_access_token(
+                    "GET", "/api/workspace", refreshed_access_token
+                ),
             )
         return _report(config, recorder)
     workspace_id = _extract_workspace_id(workspaces, config.workspace_id)
@@ -391,7 +421,7 @@ async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any
     return _report(config, recorder)
 
 
-async def _validate_token_refresh() -> dict[str, bool]:
+async def _validate_token_refresh() -> tuple[dict[str, bool], str]:
     """Exercise GoTrue refresh without exposing either token to the report."""
     if not server._refresh_token:
         raise RuntimeError("Initial login did not provide a refresh token")
@@ -403,11 +433,14 @@ async def _validate_token_refresh() -> dict[str, bool]:
     if not server._access_token:
         raise RuntimeError("Refresh did not provide an access token")
 
-    return {
-        "refresh_succeeded": True,
-        "access_token_rotated": server._access_token != previous_access_token,
-        "refresh_token_present": bool(server._refresh_token),
-    }
+    return (
+        {
+            "refresh_succeeded": True,
+            "access_token_rotated": server._access_token != previous_access_token,
+            "refresh_token_present": bool(server._refresh_token),
+        },
+        server._access_token,
+    )
 
 
 async def _run_reversible_checks(

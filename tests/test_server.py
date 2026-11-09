@@ -512,23 +512,56 @@ def test_live_compatibility_token_refresh_is_explicit_and_sanitized(monkeypatch)
     calls = []
 
     class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
         def json(self):
             return {"data": []}
+
+    class FakeRefreshResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "access_token": "new-private-access-token",
+                "refresh_token": "new-private-refresh-token",
+                "expires_in": 30,
+            }
+
+    class FakeClient:
+        async def post(self, url, json, headers):
+            assert url.endswith("/gotrue/token?grant_type=refresh_token")
+            assert json == {"refresh_token": "old-private-refresh-token"}
+            assert "Authorization" not in headers
+            return FakeRefreshResponse()
+
+        async def request(self, method, url, headers, **kwargs):
+            calls.append((method, url.removeprefix(server.BASE_URL), kwargs))
+            assert method == "GET"
+            assert url == f"{server.BASE_URL}/api/workspace"
+            assert headers["Authorization"] == "Bearer new-private-access-token"
+            assert server._token_expires_at < server.time.time()
+            return FakeResponse()
 
     async def fake_api_call(method, path, **kwargs):
         calls.append((method, path, kwargs))
         assert path == "/api/workspace"
         return FakeResponse()
 
-    async def fake_refresh():
-        server._access_token = "new-private-access-token"
-        server._refresh_token = "new-private-refresh-token"
-        return True
+    async def fake_get_async_client():
+        return FakeClient()
+
+    async def fail_auth_headers():
+        raise AssertionError("Pinned follow-up must not use authentication fallback")
 
     monkeypatch.setattr(server, "_api_call_async", fake_api_call)
+    monkeypatch.setattr(server, "_get_async_client", fake_get_async_client)
+    monkeypatch.setattr(server, "get_auth_headers_async", fail_auth_headers)
     monkeypatch.setattr(server, "_access_token", "old-private-access-token")
     monkeypatch.setattr(server, "_refresh_token", "old-private-refresh-token")
-    monkeypatch.setattr(server, "_refresh_async", fake_refresh)
+    monkeypatch.setattr(server, "_token_expires_at", 0)
 
     report = asyncio.run(
         live_compatibility.run_compatibility_checks(
