@@ -43,6 +43,10 @@ bundle and authenticates using GitHub OIDC. OCI publication does not require PyP
 A registry entry is complete only after publication succeeds and anonymous image
 access is verified. See [RELEASING.md](RELEASING.md).
 
+Version **2.0.0** was published on 2026-11-09. Anonymous image access and both Linux
+amd64/arm64 manifests were verified. The live entry is available in the
+[official registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Rahulk644%2Fappflowy-mcp-server/versions/2.0.0).
+
 Use release tags, a concise repository description, relevant GitHub topics, honest
 feature tables, and reproducible install commands. Submit to third-party directories
 only with correct packaging and actual compatibility evidence. No repository change
