@@ -64,7 +64,10 @@ GHCR publishing uses the workflow's `GITHUB_TOKEN` with `packages: write`. Image
 must be public. If an initial package is private, change its package settings to
 Public, verify an anonymous pull, and rerun the failed registry job. Container and
 registry jobs are distinct; avoid rebuilding or overwriting an already-published
-version to repair a metadata-publication failure.
+version to repair a metadata-publication failure. For download/network failures,
+run **Publish MCP Registry metadata** manually with the existing release tag.
+This recovery workflow checks out that immutable tag, checks versions, retries
+verified downloads with time bounds, and never rebuilds or republishes the image.
 
 ## Future PyPI setup
 

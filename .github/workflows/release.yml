@@ -88,28 +88,9 @@ jobs:
 
   registry:
     needs: [container]
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/publish-registry.yml
+    with:
+      release_tag: ${{ github.event.release.tag_name }}
     permissions:
       contents: read
       id-token: write
-    steps:
-    - uses: actions/checkout@v4
-    - uses: sigstore/cosign-installer@v3
-    - name: Download and verify MCP publisher
-      env:
-        MCP_PUBLISHER_VERSION: v1.8.8
-      run: |
-        archive=mcp-publisher_linux_amd64.tar.gz
-        base="https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION"
-        curl --fail --location --silent --show-error --output "$archive" "$base/$archive"
-        curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base/$archive.sigstore.json"
-        cosign verify-blob --bundle "$archive.sigstore.json" \
-          --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/$MCP_PUBLISHER_VERSION" \
-          --certificate-oidc-issuer https://token.actions.githubusercontent.com "$archive"
-        tar xzf "$archive" mcp-publisher
-    - name: Verify public image access
-      run: docker pull "ghcr.io/rahulk644/appflowy-mcp-server:${GITHUB_REF_NAME#v}"
-    - name: Authenticate and publish metadata
-      run: |
-        ./mcp-publisher login github-oidc
-        ./mcp-publisher publish
