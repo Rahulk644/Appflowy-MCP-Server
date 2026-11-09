@@ -21,8 +21,8 @@ Examples below show the `request` object; wrap it as `{"request": ...}` when cal
 | Task | Tool | Request fields |
 |---|---|---|
 | Find pages | `appflowy_search` | `workspace_id, query, limit, offset` |
-| Folder tree | `appflowy_fetch` | `workspace_id, kind:workspace_folder, depth, limit` |
-| Read document/card body | `appflowy_fetch` | `workspace_id, id, response_format:markdown` |
+| Folder tree | `appflowy_fetch` | `workspace_id, kind:workspace_folder, id:SUBTREE_ID (optional), depth` |
+| Read document/card body | `appflowy_fetch` | `workspace_id, id, response_format:markdown, offset` |
 | Structured page metadata | `appflowy_fetch` | `workspace_id, id, kind:page` |
 | Create document | `appflowy_create_pages` | `workspace_id, pages:[{parent_view_id,name,markdown}]` |
 | Create database | `appflowy_create_pages` | `workspace_id, pages:[{kind:database,parent_view_id,name,layout:grid}]` |
@@ -44,7 +44,7 @@ Examples below show the `request` object; wrap it as `{"request": ...}` when cal
 | Find/replace | `appflowy_blocks` | `command:replace_text, page_id, find, replace, replace_all` |
 | Import Markdown tree | `appflowy_import` | `parent_view_id, entries:[{path,markdown}]` |
 | Small file upload | `appflowy_import` | `parent_view_id, files:[{name,content_type,content_base64}]` |
-| Export page/tree | `appflowy_export` | `view_id, depth, limit` |
+| Export page/tree | `appflowy_export` | `view_id, depth, limit, offset` |
 | Additional REST route | `appflowy_api` | `workspace_id, method, path, params, body` |
 
 All workspace operations enforce `ALLOWED_WORKSPACE_IDS`. `appflowy_api.path` is a
@@ -123,7 +123,14 @@ Timeline uses folder layout **10** but database-view layout **8**.
 `layout_ty`, `show_table`, `first_day_of_week_v2`, `dependency_shift_ty`,
 `dependency_direction`, `avoid_weekends`. Date fields must be DateTime fields.
 Read current values using `view_settings` before editing; unrelated keys survive.
-Formula evaluation and the full Timeline UI require deployment-specific validation.
+Disposable browser CI verifies the literal Formula `1 + 2` evaluates to `3` and a
+configured Timeline toolbar and row render. Complex expressions, dragging and
+other settings still require deployment-specific validation.
+
+Field deletion refuses active local filters, sorts, groups, formulas, calculations
+and layout references. Reconfigure the named dependencies first. Relation deletion
+belongs in AppFlowy for reciprocal cleanup; incoming references from other databases
+are not inspected.
 
 Spaces default to **private**. Creation uses `kind:space` and a structured
 `permission`; edits use `appflowy_update(command=space_permissions,id,permission)`.
@@ -136,10 +143,23 @@ AppFlowy settings and the backend still decide effective access.
 
 ## 6. Bounds, import/export and partial outcomes
 
-Read limits are 1–100; offsets are bounded. Search uses the server's cursor;
-other listings may paginate client-side because AppFlowy lacks server paging.
-`has_more` / `next_offset` report continuation. Response bodies are bounded to
-50,000 characters with explicit truncation. Smaller pages preserve more structure.
+Read limits are 1–100. Always follow returned `next_offset` while `has_more` is
+true; do not calculate the next cursor from the requested limit. Search preserves
+the server's cursor. Client-paged row/database lists return the largest complete
+prefix that fits the 50,000-character serialized JSON budget. A single oversized
+record retains its identity with `content_omitted:true`; this is not full content.
+Missing materialized row details retain their IDs with `unavailable:true`: retry
+reads rather than recreating those rows. Other oversized responses use an explicit
+text preview; do not treat previews as complete resources.
+
+For Markdown, `appflowy_fetch(response_format=markdown)` uses Unicode character
+positions, starting at `offset:0`. Concatenate `data.markdown` from each response.
+Check that `content_hash` stays the same across chunks; restart if it changes.
+These reads are not an atomic snapshot. Each chunk still fetches/decodes the full
+upstream document. JSON page metadata does not accept a nonzero offset. Folder
+reads accept `id` to fetch a specific subtree; omit it to read the workspace root.
+Folder node/depth bounds can truncate the tree and are not a paging cursor.
+
 Batch creation supports 20 pages or rows. Input Markdown is at most 100,000 chars
 per entry. Inspect every per-item result, including on overall failure.
 
@@ -148,7 +168,14 @@ Missing parent documents are created. Total Markdown per import is 200,000 chars
 50 entries. Files are base64 payloads: at most 1,000,000 decoded bytes each,
 2,000,000 total, 10 files. File URLs require AppFlowy authorization; upload alone
 does not insert a rich media block. No tool reads paths from the server filesystem.
-Export traverses a bounded page subtree and reports skipped/unrenderable items.
+Export reads only the requested folder subtree. Its `offset` counts breadth-first
+page attempts, including unavailable pages; `limit` bounds attempts per call.
+Returned entries are complete files. Follow the tree's `next_offset` and inspect
+warnings: an oversized document supplies an `appflowy_fetch` request for chunked
+Markdown, rather than a partial file. Continue that fetch separately from the tree
+cursor. A changed live tree can change ordering between calls; export is not an
+atomic archive. Upstream row ID lists and collaboration snapshots can still be
+large even when the response is bounded.
 
 ## 7. Optional AI and profiles
 
@@ -167,6 +194,7 @@ separate; authenticate each layer as configured by the operator.
 ## 8. Coverage evidence
 
 The release's compatibility report distinguishes live self-hosted/browser checks,
-offline protocol tests and unvalidated Cloud/AI paths. Formula and Timeline support
-covers schema persistence; it does not certify every calculated value or UI mode.
+offline protocol tests and unvalidated Cloud/AI paths. Formula and Timeline checks
+include the specific evaluated/rendered examples above; they do not certify every
+calculated value or UI mode.
 See COMPATIBILITY.md in the repository before assuming a backend version is tested.

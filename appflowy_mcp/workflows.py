@@ -46,27 +46,76 @@ def bounded(value: Any) -> dict:
     encoded = json.dumps(result, ensure_ascii=False, default=str)
     if len(encoded) <= MAX_RESULT_CHARS:
         return result
-    return {
+    preview = {
         "truncated": True,
-        "preview": encoded[:MAX_RESULT_CHARS],
+        "preview": "",
         "hint": "Reduce limit or fetch one resource",
     }
+    low, high = 0, min(len(encoded), MAX_RESULT_CHARS)
+    while low < high:
+        middle = (low + high + 1) // 2
+        preview["preview"] = encoded[:middle]
+        if len(json.dumps(preview, ensure_ascii=False)) <= MAX_RESULT_CHARS:
+            low = middle
+        else:
+            high = middle - 1
+    preview["preview"] = encoded[:low]
+    return preview
 
 
 def page(items: list, request: m.ReadInput) -> dict:
     data = items[request.offset : request.offset + request.limit]
-    next_offset = request.offset + len(data)
-    result = {
-        "items": data,
-        "offset": request.offset,
-        "next_offset": next_offset if next_offset < len(items) else None,
-        "has_more": next_offset < len(items),
-        "total_count": len(items),
+    return _fit_page(data, request, len(items))
+
+
+def _fit_page(data: list, request: m.ReadInput, total_count: int) -> dict:
+    """Keep complete items and a usable cursor when a client page hits its budget."""
+
+    def candidate(count):
+        end = request.offset + count
+        return _format_result(
+            {
+                "items": data[:count],
+                "offset": request.offset,
+                "next_offset": end if end < total_count else None,
+                "has_more": end < total_count,
+                "total_count": total_count,
+            },
+            request.response_format,
+        )
+
+    result = candidate(len(data))
+    if len(json.dumps(result, ensure_ascii=False, default=str)) <= MAX_RESULT_CHARS:
+        return result
+    low, high = 0, len(data) - 1
+    while low < high:
+        middle = (low + high + 1) // 2
+        if (
+            len(json.dumps(candidate(middle), ensure_ascii=False, default=str))
+            <= MAX_RESULT_CHARS
+        ):
+            low = middle
+        else:
+            high = middle - 1
+    if low:
+        return candidate(low)
+    item = data[0]
+    identity = {
+        key: str(item[key])[:256]
+        for key in ("id", "row_id", "object_id", "name", "title")
+        if isinstance(item, dict) and key in item
     }
-    return render(result, request.response_format)
+    data = [
+        {
+            **identity,
+            "content_omitted": True,
+            "message": "Item exceeds the response budget; use a narrower fetch or AppFlowy for full content",
+        }
+    ]
+    return candidate(1)
 
 
-def render(value: dict, response_format: str) -> dict:
+def _format_result(value: dict, response_format: str) -> dict:
     if response_format == "markdown":
         items = value.get("items")
         if isinstance(items, list):
@@ -94,14 +143,16 @@ def render(value: dict, response_format: str) -> dict:
             markdown = "\n".join(
                 f"- **{key}**: {entry}" for key, entry in value.items()
             )
-        return bounded(
-            {
-                "markdown": markdown,
-                "has_more": value.get("has_more", False),
-                "next_offset": value.get("next_offset"),
-            }
-        )
-    return bounded(value)
+        return {
+            "markdown": markdown,
+            "has_more": value.get("has_more", False),
+            "next_offset": value.get("next_offset"),
+        }
+    return value
+
+
+def render(value: dict, response_format: str) -> dict:
+    return bounded(_format_result(value, response_format))
 
 
 async def api(method: str, path: str, **kwargs):
@@ -603,11 +654,9 @@ async def appflowy_rows(request: m.RowsInput) -> dict:
         if request.command == "get":
             if not request.row_ids:
                 raise ValueError("row_ids is required")
-            rows = await b.get_database_row_details(
-                ws, db, ",".join(request.row_ids), request.with_doc
-            )
-            return page(rows, request)
-        ids = await b.get_database_row_ids(ws, db)
+            ids = request.row_ids
+        else:
+            ids = await b.get_database_row_ids(ws, db)
         selected = ids[request.offset : request.offset + request.limit]
         normalized = [
             str(item.get("id", item.get("row_id", "")))
@@ -615,6 +664,8 @@ async def appflowy_rows(request: m.RowsInput) -> dict:
             else str(item)
             for item in selected
         ]
+        for row_id in normalized:
+            identifier(row_id, "row_id")
         rows = (
             await b.get_database_row_details(
                 ws, db, ",".join(normalized), request.with_doc
@@ -622,16 +673,24 @@ async def appflowy_rows(request: m.RowsInput) -> dict:
             if normalized
             else []
         )
-        end = request.offset + len(selected)
-        return render(
-            {
-                "items": rows,
-                "has_more": end < len(ids),
-                "next_offset": end if end < len(ids) else None,
-                "total_count": len(ids),
-            },
-            request.response_format,
-        )
+        if not isinstance(rows, list) or any(
+            not isinstance(row, dict) or not row.get("id", row.get("row_id"))
+            for row in rows
+        ):
+            raise TypeError("Row detail response must be a list with stable row IDs")
+        by_id = {str(row.get("id", row.get("row_id"))): row for row in rows}
+        ordered = [
+            by_id.get(
+                row_id,
+                {
+                    "id": row_id,
+                    "unavailable": True,
+                    "message": "Materialized row details are not ready; do not recreate this row",
+                },
+            )
+            for row_id in normalized
+        ]
+        return _fit_page(ordered, request, len(ids))
     if request.command == "delete":
         if not request.row_ids:
             raise ValueError("row_ids is required")
@@ -783,7 +842,7 @@ async def appflowy_import(request: m.ImportInput) -> dict:
     uploads = []
     for entry, value in zip(request.files, decoded, strict=True):
         try:
-            response = await b._api_call_async(
+            response = await a._api_call_async(
                 "PUT",
                 f"/api/file_storage/{ws}/v1/blob/{request.parent_view_id}",
                 content=value,
@@ -814,7 +873,11 @@ async def appflowy_export(request: m.ExportInput) -> dict:
     """Export a page/tree as bounded Markdown entries without reading server files."""
     return bounded(
         await backend().appflowy_export(
-            workspace(request), request.view_id, request.depth, request.limit
+            workspace(request),
+            request.view_id,
+            request.depth,
+            request.limit,
+            request.offset,
         )
     )
 

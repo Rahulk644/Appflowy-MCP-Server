@@ -121,6 +121,12 @@ Use the relevant document command instead; the validation error names unused fie
 {"request":{"workspace_id":"WORKSPACE_ID","database_id":"DATABASE_ID","command":"update_cells","rows":[{"row_id":"ROW_ID","cells":{"Name":"Updated task","Done":true}}]}}
 ```
 
+Follow returned `next_offset` values rather than adding the requested limit: a
+response may contain fewer complete items to fit its budget. Markdown reads use
+character offsets and a content hash; folder reads can target an `id`. Tree export
+returns complete files, a tree cursor, and fetch instructions for oversized documents.
+See the [continuation contract](KNOWLEDGE.md#6-bounds-importexport-and-partial-outcomes).
+
 `APPFLOWY_TOOL_PROFILE=legacy` exposes the original 34 tool names instead.
 `APPFLOWY_READ_ONLY=true` exposes five read-only tools in compact mode and rejects
 API mutations. Profiles are exclusive. Read the [migration table](MIGRATION.md)

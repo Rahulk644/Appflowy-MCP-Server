@@ -118,6 +118,56 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         )
         assert "Replacement" in await b.get_page_markdown_async(ws, document)
         passed("guarded_document_replacement")
+        child = await b.create_page(
+            ws,
+            document,
+            "MCP paged document",
+            markdown="# Paged content\n\n" + "Chunk text. " * 4500,
+        )
+        subtree = await w.appflowy_fetch(
+            m.FetchInput(
+                workspace_id=ws,
+                kind="workspace_folder",
+                id=document,
+                depth=1,
+            )
+        )
+        assert subtree["data"]["view_id"] == document
+        assert any(item["view_id"] == child for item in subtree["data"]["children"])
+        passed("scoped_folder_read")
+        first = await w.appflowy_export(
+            m.ExportInput(workspace_id=ws, view_id=document, depth=1, limit=1)
+        )
+        assert first["entries"][0]["id"] == document
+        assert first["next_offset"] == 1
+        second = await w.appflowy_export(
+            m.ExportInput(
+                workspace_id=ws,
+                view_id=document,
+                depth=1,
+                limit=1,
+                offset=first["next_offset"],
+            )
+        )
+        assert second["entries"] == []
+        assert second["warnings"][0]["type"] == "document_requires_paging"
+        assert second["next_offset"] is None
+        passed("export_tree_page_cursor")
+        request = second["warnings"][0]["continuation"]["request"]
+        complete = await b.get_page_markdown_async(ws, child)
+        chunks, content_hash = [], None
+        while True:
+            chunk = await w.appflowy_fetch(m.FetchInput(**request))
+            assert chunk["id"] == child
+            assert content_hash is None or chunk["content_hash"] == content_hash
+            content_hash = chunk["content_hash"]
+            chunks.append(chunk["data"]["markdown"])
+            if not chunk["has_more"]:
+                break
+            assert chunk["next_offset"] > request["offset"]
+            request["offset"] = chunk["next_offset"]
+        assert len(chunks) > 1 and "".join(chunks) == complete
+        passed("large_document_chunk_reassembly")
         payload = b"Disposable MCP upload verification\n"
         uploaded = await w.appflowy_import(
             m.ImportInput(

@@ -48,6 +48,7 @@ class SearchInput(ReadInput):
 
 
 class FetchInput(ReadInput):
+    offset: int = Field(default=0, ge=0)
     id: str = "self"
     kind: Literal[
         "auto", "self", "workspaces", "workspace_folder", "database_fields", "page"
@@ -73,9 +74,10 @@ class FetchInput(ReadInput):
             + {
                 "self": "limit offset",
                 "workspaces": "limit offset",
-                "workspace_folder": "workspace_id depth",
+                "workspace_folder": "workspace_id id depth",
                 "database_fields": "workspace_id id database_id limit offset",
-                "page": "workspace_id id response_format",
+                "page": "workspace_id id response_format"
+                + (" offset" if self.response_format == "markdown" else ""),
             }[kind],
         )
         if (
@@ -357,6 +359,7 @@ class ExportInput(Input):
     view_id: Identifier
     depth: int = Field(default=0, ge=0, le=5)
     limit: int = Field(default=50, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=1_000_000)
 
 
 class AIInput(ReadInput):

@@ -121,6 +121,8 @@ def test_appflowy_export_single_page(monkeypatch):
         "warnings": [],
         "warnings_truncated": False,
         "has_more": False,
+        "offset": 0,
+        "next_offset": None,
     }
 
 
@@ -141,14 +143,14 @@ def test_appflowy_export_child_tree_with_warnings(monkeypatch):
     }
 
     async def fake_folder(*_a, **_k):
-        return tree
+        return tree["views"][0]
 
     async def fake_markdown(_workspace_id, page_id):
         if page_id == "db":
             raise RuntimeError("not a document")
         return f"# {page_id}"
 
-    monkeypatch.setattr(server, "get_workspace_folder_async", fake_folder)
+    monkeypatch.setattr(server, "get_folder_view_async", fake_folder)
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
 
     out = asyncio.run(server.appflowy_export("ws-allowed", "root", depth=1))
@@ -178,12 +180,12 @@ def test_appflowy_export_limit_sets_has_more(monkeypatch):
     }
 
     async def fake_folder(*_a, **_k):
-        return tree
+        return tree["views"][0]
 
     async def fake_markdown(_workspace_id, page_id):
         return f"# {page_id}"
 
-    monkeypatch.setattr(server, "get_workspace_folder_async", fake_folder)
+    monkeypatch.setattr(server, "get_folder_view_async", fake_folder)
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
 
     out = asyncio.run(server.appflowy_export("ws-allowed", "root", depth=1, limit=1))
@@ -192,25 +194,30 @@ def test_appflowy_export_limit_sets_has_more(monkeypatch):
     assert out["has_more"] is True
 
 
-def test_appflowy_export_warns_when_tree_cannot_locate_target(monkeypatch):
+def test_appflowy_export_fetches_target_subtree_without_workspace_scan(monkeypatch):
     import asyncio
 
-    async def fake_folder(*_a, **_k):
-        return {"views": []}
+    async def fake_subtree(workspace_id, view_id, depth):
+        assert (workspace_id, view_id, depth) == ("ws-allowed", "page1", 1)
+        return {
+            "view_id": "page1",
+            "name": "Deep target",
+            "children": [{"view_id": "child", "name": "Child"}],
+        }
 
     async def fake_markdown(_workspace_id, page_id):
         return f"# {page_id}"
 
-    monkeypatch.setattr(server, "get_workspace_folder_async", fake_folder)
+    monkeypatch.setattr(server, "get_folder_view_async", fake_subtree)
+    monkeypatch.setattr(
+        server,
+        "get_workspace_folder_async",
+        AsyncMock(side_effect=AssertionError("must not scan workspace")),
+    )
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
-
     out = asyncio.run(server.appflowy_export("ws-allowed", "page1", depth=1))
-
-    assert out["entries"] == [
-        {"path": "page1.md", "id": "page1", "markdown": "# page1"}
-    ]
-    assert out["warnings"][0]["id"] == "page1"
-    assert out["warnings"][0]["type"] == "target_not_found"
+    assert [entry["id"] for entry in out["entries"]] == ["page1", "child"]
+    assert out["warnings"] == []
 
 
 def test_appflowy_export_failed_child_consumes_limit(monkeypatch):
@@ -230,14 +237,14 @@ def test_appflowy_export_failed_child_consumes_limit(monkeypatch):
     }
 
     async def fake_folder(*_a, **_k):
-        return tree
+        return tree["views"][0]
 
     async def fake_markdown(_workspace_id, page_id):
         if page_id == "broken":
             raise RuntimeError("sensitive path /tmp/secret")
         return f"# {page_id}"
 
-    monkeypatch.setattr(server, "get_workspace_folder_async", fake_folder)
+    monkeypatch.setattr(server, "get_folder_view_async", fake_folder)
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
 
     out = asyncio.run(server.appflowy_export("ws-allowed", "root", depth=1, limit=2))
@@ -254,7 +261,7 @@ def test_appflowy_export_failed_child_consumes_limit(monkeypatch):
     assert out["has_more"] is True
 
 
-def test_appflowy_export_does_not_queue_children_after_failed_parent(monkeypatch):
+def test_appflowy_export_keeps_traversal_stable_after_unavailable_parent(monkeypatch):
     import asyncio
 
     tree = {
@@ -274,21 +281,20 @@ def test_appflowy_export_does_not_queue_children_after_failed_parent(monkeypatch
     }
 
     async def fake_folder(*_a, **_k):
-        return tree
+        return tree["views"][0]
 
     async def fake_markdown(_workspace_id, page_id):
         if page_id == "broken":
             raise RuntimeError("not a document")
-        if page_id == "grandchild":
-            raise AssertionError("grandchild should not be exported")
         return f"# {page_id}"
 
-    monkeypatch.setattr(server, "get_workspace_folder_async", fake_folder)
+    monkeypatch.setattr(server, "get_folder_view_async", fake_folder)
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
 
     out = asyncio.run(server.appflowy_export("ws-allowed", "root", depth=2))
 
-    assert out["entries"] == [{"path": "Root.md", "id": "root", "markdown": "# root"}]
+    assert [entry["id"] for entry in out["entries"]] == ["root", "grandchild"]
+    assert out["entries"][1]["path"] == "Root/Broken/Grandchild.md"
     assert [warning["id"] for warning in out["warnings"]] == ["broken"]
 
 
@@ -317,12 +323,12 @@ def test_appflowy_export_duplicate_sibling_paths_keep_child_subtrees(monkeypatch
     }
 
     async def fake_folder(*_a, **_k):
-        return tree
+        return tree["views"][0]
 
     async def fake_markdown(_workspace_id, page_id):
         return f"# {page_id}"
 
-    monkeypatch.setattr(server, "get_workspace_folder_async", fake_folder)
+    monkeypatch.setattr(server, "get_folder_view_async", fake_folder)
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
 
     out = asyncio.run(server.appflowy_export("ws-allowed", "root", depth=2))
@@ -371,9 +377,10 @@ def test_live_compatibility_harness_read_only(monkeypatch):
         calls.append((method, path, kwargs))
         if path == "/api/workspace":
             return FakeResponse([{"workspace_id": "ws-allowed", "name": "Workspace"}])
-        if path == "/api/workspace/ws-allowed/folder":
+        if path == "/api/workspace/ws-allowed/view/ws-allowed":
             return FakeResponse(
                 {
+                    "view_id": "ws-allowed",
                     "views": [
                         {
                             "view_id": "page-1",
@@ -383,7 +390,7 @@ def test_live_compatibility_harness_read_only(monkeypatch):
                             "is_space": False,
                             "children": [],
                         }
-                    ]
+                    ],
                 }
             )
         if path == "/api/workspace/ws-allowed/database":
@@ -562,8 +569,8 @@ def test_live_compatibility_harness_reversible_flag(monkeypatch):
         calls.append((method, path))
         if path == "/api/workspace":
             return FakeResponse([{"workspace_id": "ws-allowed"}])
-        if path == "/api/workspace/ws-allowed/folder":
-            return FakeResponse({"views": []})
+        if path == "/api/workspace/ws-allowed/view/ws-allowed":
+            return FakeResponse({"view_id": "ws-allowed", "views": []})
         if path == "/api/workspace/ws-allowed/database":
             return FakeResponse([])
         if path == "/api/workspace/ws-allowed/page-view":
@@ -635,8 +642,8 @@ def test_live_compatibility_reversible_collab_and_row_checks(monkeypatch):
         calls.append((method, path, kwargs.get("json")))
         if path == "/api/workspace":
             return FakeResponse([{"workspace_id": "ws-allowed"}])
-        if path == "/api/workspace/ws-allowed/folder":
-            return FakeResponse({"views": []})
+        if path == "/api/workspace/ws-allowed/view/ws-allowed":
+            return FakeResponse({"view_id": "ws-allowed", "views": []})
         if path == "/api/workspace/ws-allowed/database":
             return FakeResponse([{"database_id": "db-1"}])
         if path == "/api/workspace/ws-allowed/database/db-1/fields":
@@ -1275,16 +1282,18 @@ def test_appflowy_fetch_folder_infers_single_allowed_workspace(
     monkeypatch.setenv("ALLOWED_WORKSPACE_IDS", "ws-allowed")
 
     def handler(request):
-        assert request.url.path == "/api/workspace/ws-allowed/folder"
+        assert request.url.path == "/api/workspace/ws-allowed/view/ws-allowed"
         assert request.url.params["depth"] == "2"
-        return httpx.Response(200, json={"data": {"views": [{"id": "page1"}]}})
+        return httpx.Response(
+            200, json={"data": {"view_id": "ws-allowed", "views": [{"id": "page1"}]}}
+        )
 
     mock_appflowy_api(handler)
     out = asyncio.run(server.appflowy_fetch(kind="workspace_folder", depth=2))
 
     assert out["kind"] == "workspace_folder"
     assert out["workspace_id"] == "ws-allowed"
-    assert out["data"] == {"views": [{"id": "page1"}]}
+    assert out["data"] == {"view_id": "ws-allowed", "views": [{"id": "page1"}]}
     assert out["truncated"] is False
     assert out["nodes_visited"] == 2
 
