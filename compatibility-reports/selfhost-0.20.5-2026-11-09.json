@@ -32,6 +32,21 @@
       "ok": true
     },
     {
+      "name": "scoped_folder_read",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "export_tree_page_cursor",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "large_document_chunk_reassembly",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
       "name": "file_upload_download_and_cleanup",
       "classification": "live_validated",
       "ok": true
@@ -77,6 +92,16 @@
       "ok": true
     },
     {
+      "name": "field_deletion_rejects_timeline_dependency",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "unreferenced_field_delete_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
       "name": "row_delete_authoritative_cleanup",
       "classification": "live_validated",
       "ok": true
@@ -107,8 +132,15 @@
       "ok": true
     }
   ],
-  "passed": 20,
+  "passed": 25,
   "failed": 0,
   "ok": true,
-  "credentials_recorded": false
+  "credentials_recorded": false,
+  "search_startup_retries": 0,
+  "evidence": {
+    "source_commit": "fdeed81666f24ef472012af0f8dcd50cb29fb325",
+    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/42602750316",
+    "artifact": "selfhost-compatibility",
+    "artifact_sha256": "eac44978765a6fa08933ffb891c6f864f55296cfa2a1d12b9f3f4eaeab811157"
+  }
 }

@@ -1,56 +1,44 @@
 # Changelog
 
-## Unreleased
+## 2.0.2 — 2026-11-09
 
-- Preserve complete list records and continuation cursors within response bounds;
-  keep identities for oversized or temporarily unavailable rows.
-- Scope folder/export reads to the requested subtree. Export complete Markdown files
-  with a tree cursor, stop reads at the output budget, and provide chunk-fetch
-  instructions for oversized documents. Add Markdown character offsets and revision hashes.
-- Measure synthetic row, subtree export and snapshot decode workloads; document the
-  remaining full-list/snapshot costs and the limits of benchmark evidence.
+### Fixed
 
-- Upgrade workflow actions to verified release commits using Node 24, verify
-  distribution upload/download on Linux and Windows, and enable weekly action updates.
-- Wait through the disposable stack's explicit temporary search-unavailable state
-  before asserting an indexed hit; keep unexpected errors and exhausted waits failing.
-- Attach gated wheel/source artifacts to GitHub Releases, verify identical assets
-  on retry and refuse replacements. Reuse matching versioned images and recover
-  only the latest stable alias without rebuilding immutable tags.
-- Use one declared package version for builds, CLI, doctor and MCP, and generate
-  registry metadata from it. Keep dependencies in pyproject and validate release
-  tags/image versions in CI, including older-tag registry recovery.
-- Register legacy handlers through an explicit profile table and share behavior
-  annotations with compact workflows; keep profile manifests unchanged.
-- Give AppFlowy HTTP/session state a single owner in `api.py`; retain direct Python
-  helper aliases and close the shared client on both transport shutdown paths.
-- Isolate local Markdown/block conversion and collaboration decoding from the
-  network backend; retain the existing tools, entry points and async behavior.
-- Refuse field deletion while local filters, sorts, groups, formulas, calculations
-  or view layouts reference it. Keep rejection read-only, clean direct form-field
-  settings on successful deletion, and delegate Relation deletion to AppFlowy.
-- Reject command-specific fields that would otherwise be ignored, including row
-  document text on cell-only updates, Markdown on database creation, conflicting
-  block representations and mismatched fetch IDs. Validate whole batches before writes.
-- Fix DateTime cell writes to persist timestamp, range and time flags as separate
-  collaboration attributes; preserve unrelated cell metadata and confirm all
-  changed attributes on readback.
-- Validate visible Number, DateTime/range, select and multi-select create/update,
-  Board grouping, an evaluated Formula and a configured Timeline in disposable CI.
-- Start search/worker services after Cloud migrations are ready; search checks use
-  a unique document token and allow for asynchronous indexing.
-- Expire abandoned OAuth state/codes; prune expired token records and bound public
-  registration/transient caches.
-- Rotate refresh tokens with fixed login deadlines, hashed replay records, and
-  durable revocation of the affected login family. Other logins remain independent.
-- Enable standards-compliant public/Basic/post-client token revocation and advertise
-  supported client authentication methods.
-- Refuse uncommitted token issuance/rotation when persistent storage fails; keep
-  client registration and credential changes consistent on retry.
-- Validate the official MCP SDK login, PKCE, refresh, replay, reauthentication and
-  revocation flow over HTTP with a mocked Google identity exchange.
-- Existing OAuth token stores require one new sign-in for the upgraded token format;
-  client registrations are retained.
+- Rotate OAuth refresh tokens within a durable login family. Detect replay across
+  restarts, revoke only the affected login, expire abandoned state/codes and bound
+  public caches. Storage failures return 503 before credentials are issued.
+- Support public, Basic and post-client OAuth revocation with the official MCP SDK.
+  Existing client registrations survive; upgraded OAuth sessions require a new sign-in.
+- Store DateTime timestamps and range/time flags in the collaboration attributes
+  AppFlowy renders, preserving unrelated metadata and verifying all changed attributes.
+- Reject meaningful command inputs that would otherwise be ignored. Validate whole
+  batches before writes. Refuse field deletion while local schema/view references
+  remain; delegate Relation deletion to AppFlowy for reciprocal cleanup.
+- Preserve complete list records and continuation cursors within response bounds.
+  Retain stable identities for oversized records and temporarily unavailable rows.
+- Scope folder/export reads to the requested subtree. Export complete files with
+  breadth-first continuation, stop document reads at the output budget, and supply
+  chunk-fetch instructions for oversized documents. Markdown chunks include a
+  character cursor and revision hash.
+
+### Maintenance and validation
+
+- Separate API/session ownership, local document/CRDT conversion and explicit
+  profile registration without changing supported entry points or tool counts.
+- Use one package version for builds and runtime surfaces, with generated registry
+  metadata and one dependency declaration in `pyproject.toml`.
+- Attach gated wheel/source artifacts to GitHub Releases. Refuse replacements,
+  reuse matching immutable images on retry, and recover the latest stable alias.
+  PyPI remains disabled.
+- Upgrade pinned workflow actions to Node 24 releases, verify artifact round trips
+  on Linux/Windows, and enable weekly dependency-update proposals.
+- Expand disposable browser coverage for typed cell updates, Board grouping,
+  evaluated Formula and rendered Timeline. Wait for migration/index readiness
+  while still requiring an actual search hit and failing unexpected API errors.
+- Add official MCP OAuth lifecycle contracts and synthetic workspace benchmarks.
+  Document remaining full-list/snapshot costs without claiming production latency.
+
+See [MIGRATION.md](MIGRATION.md) before upgrading OAuth clients or continuation loops.
 
 ## 2.0.1 — 2026-11-09
 
