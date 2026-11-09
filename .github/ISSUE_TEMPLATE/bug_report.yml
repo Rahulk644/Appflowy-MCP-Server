@@ -5,13 +5,27 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to fill out this bug report!
+        Include a minimal reproduction. Redact credentials, tokens and private workspace content.
   - type: textarea
     id: what-happened
     attributes:
       label: What happened?
       description: Also tell us, what did you expect to happen?
       placeholder: Tell us what you see!
+    validations:
+      required: true
+  - type: input
+    id: release
+    attributes:
+      label: MCP server release or commit
+      placeholder: e.g., 2.0.0, image tag/digest, or main commit SHA
+    validations:
+      required: true
+  - type: input
+    id: deployment
+    attributes:
+      label: AppFlowy deployment and version
+      placeholder: e.g., Cloud SaaS or self-hosted Cloud 0.20.5 / Web 0.20.11
     validations:
       required: true
   - type: input

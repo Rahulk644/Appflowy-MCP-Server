@@ -548,6 +548,19 @@ def encode_cells(fields: list[dict], cells: dict) -> dict:
                 raise ValueError(
                     "DateTime expects an ISO timestamp or timestamp object"
                 )
+            for key in ("timestamp", "end_timestamp"):
+                stamp = value.get(key)
+                if stamp is not None and (
+                    isinstance(stamp, bool)
+                    or not isinstance(stamp, (int, float))
+                    or not math.isfinite(stamp)
+                ):
+                    raise ValueError(f"DateTime {key} must be a finite number")
+            if value["timestamp"] is None:
+                raise ValueError("DateTime timestamp must be a finite number")
+            for key in ("include_time", "is_range"):
+                if key in value and type(value[key]) is not bool:
+                    raise ValueError(f"DateTime {key} must be boolean")
             value = json.dumps(value, allow_nan=False)
         else:
             raise ValueError(
@@ -976,9 +989,12 @@ def register(server):
                 "appflowy_database": _read_database,
                 "appflowy_rows": _read_rows,
             }.get(name, function)
-        # Multiplexed mutation tools retain conservative hints on the wire.
+        # A tool can create/append/import depending on its command. Advertising
+        # idempotence here could cause a client to retry and duplicate writes.
         server.tool(
             name=name,
             title=name.removeprefix("appflowy_").replace("_", " ").title(),
-            annotations=b._READ if name in read or b._read_only() else b._DESTRUCTIVE,
+            annotations=b._READ
+            if name in read or b._read_only()
+            else {**b._DESTRUCTIVE, "idempotentHint": False},
         )(function)

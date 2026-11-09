@@ -1,42 +1,54 @@
-# Security Policy
+# Security policy
 
-## Security model (read before deploying)
+## Deployment model
 
-AppFlowy Cloud authenticates via GoTrue (email/password → JWT); **there are no
-scoped API keys or personal access tokens**. Any server built on this API
-therefore holds *full-account* credentials. Design accordingly:
+The server holds a bot account's AppFlowy credentials or access token. Treat these
+as account credentials unless the target AppFlowy deployment documents narrower
+permissions. Use a dedicated account invited only to the workspaces it needs.
 
-- **Use a dedicated bot account**, invited to only the workspace(s) you expose.
-  Its membership is the real blast-radius limit — never use your primary login.
-- **Set `ALLOWED_WORKSPACE_IDS`** so every tool refuses workspaces outside the
-  allow-list, even if the account can see more (defence-in-depth).
-- **Gate the endpoint.** Either set `MCP_SECRET_TOKEN` (clients send an
-  `Authorization: Bearer <token>` header, constant-time compared) **or** enable
-  **Google OAuth** (`GOOGLE_CLIENT_ID` + `ALLOWED_EMAILS`) for per-user sign-in.
-  A `?token=` URL form is also accepted for clients that can't set a header —
-  convenient, but the token then appears in URLs/logs, so treat such a link like
-  a password and prefer the header or OAuth.
-- **Keep the endpoint off the open internet.** Front it with an identity gate
-  (e.g. Cloudflare Access / Tunnel) or a reverse-proxy IP allow-list; the Bearer
-  token is a second layer, not the only one.
-- **Protect `.env`** (`chmod 600`, or use Docker secrets). It contains the
-  bot account password.
-- DNS-rebinding protection is on by default for the HTTP transports; set
-  `MCP_ALLOWED_HOSTS` to your public host when behind a proxy.
+`ALLOWED_WORKSPACE_IDS` restricts the server's workspace access. This is a global
+policy: all approved MCP clients use the same AppFlowy identity and allowed
+workspaces. Google OAuth identifies the connecting person; it does not impersonate
+that person's AppFlowy account or provide per-client page-subtree permissions.
 
-## Supported Versions
+For remote HTTP, require `MCP_SECRET_TOKEN` or configured Google OAuth, serve over
+HTTPS, and restrict network access as appropriate for the deployment. Without
+configured HTTP authentication, the endpoint is open to callers who can reach it.
+Stdio is intended for a local client process.
 
-Currently, only the latest version of the `main` branch is actively supported with security updates. 
+Use a Bearer header where possible. The supported `?token=` form can leak through
+URLs, browser history and upstream proxy logs. The application redacts that query
+parameter in its own access logs; it cannot redact another service's logs.
 
-## Reporting a Vulnerability
+DNS-rebinding checks are enabled by default. Configure public hosts/origins,
+including custom ports, when using a reverse proxy. `APPFLOWY_READ_ONLY=true`
+rejects workspace mutations independently of tool registration. Advisory MCP tool
+annotations are not an authorization boundary.
 
-We take the security of our users and their data very seriously. If you discover a security vulnerability in this project, please **do not report it by creating a public GitHub issue**.
+## Credentials and OAuth state
 
-Instead, please report it privately by sending an email to the repository owner or using GitHub's private vulnerability reporting feature (if enabled).
+Protect `.env`, access tokens and `OAUTH_STORE_PATH`. The OAuth file contains
+client credentials and bearer/refresh tokens; use a private persistent volume and
+one server worker. Atomic replacement prevents partial writes but does not provide
+cross-process coordination, encryption at rest or a token database.
 
-When reporting a vulnerability, please include as much information as possible:
-* A description of the vulnerability and its impact.
-* Steps to reproduce the issue.
-* Any potential fixes or mitigations you can suggest.
+Google sign-in must use an allowed, verified email. On current `main`, persisted
+access and refresh tokens are checked against the current email allow-list;
+legacy tokens without a subject require sign-in again. OAuth tokens must carry
+the `appflowy` scope. Refreshes preserve resource binding and the requested scope.
+See [CHANGELOG.md](CHANGELOG.md) for fixes not yet present in the published release
+and [ROADMAP.md](ROADMAP.md) for remaining lifecycle controls.
 
-We will endeavor to respond to your report within 48 hours and work with you to resolve the issue as quickly as possible.
+Keep secrets and private response bodies out of issues, fixtures, benchmarks,
+reports and screenshots. Disposable integration accounts are test-only.
+
+## Supported versions and reporting
+
+Security fixes are developed on `main` and distributed in new releases. Do not
+assume an existing immutable image/tag includes later fixes; check the changelog.
+
+Report vulnerabilities privately through
+[GitHub private vulnerability reporting](https://github.com/Rahulk644/Appflowy-MCP-Server/security/advisories/new)
+when available, or contact the [maintainer](https://github.com/Rahulk644) privately.
+Include affected versions, impact, reproduction steps and any proposed fix. Avoid
+posting credentials or exploit details in a public issue.

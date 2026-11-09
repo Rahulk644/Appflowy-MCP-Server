@@ -457,8 +457,18 @@ def test_cloud_ci_requires_both_explicit_opt_ins(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_oauth_only_http_configuration_still_requires_auth(monkeypatch):
+    from mcp.server.auth.provider import AccessToken
+
     provider = type(
-        "Provider", (), {"load_access_token": AsyncMock(return_value=object())}
+        "Provider",
+        (),
+        {
+            "load_access_token": AsyncMock(
+                return_value=AccessToken(
+                    token="valid-oauth", client_id="client", scopes=["appflowy"]
+                )
+            )
+        },
     )()
     monkeypatch.delenv("MCP_SECRET_TOKEN", raising=False)
     monkeypatch.setattr(b, "_oauth_provider", provider)

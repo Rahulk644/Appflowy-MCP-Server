@@ -1,173 +1,53 @@
 # Changelog
 
-All notable changes are documented here. The format loosely follows
-[Keep a Changelog](https://keepachangelog.com/), and versions aim to follow
-[Semantic Versioning](https://semver.org/).
-
-## [2.0.0] - 2026-11-09
-
-### Changed
-- Python 3.11+ and official MCP 2.3+ `MCPServer`; all AppFlowy network operations
-  now use async I/O. Both modern and legacy protocol connections are tested.
-- Compact default: 11 prefixed tools, 12 with experimental AI enabled; exclusive
-  legacy 34-tool profile and five-tool read-only profile. See MIGRATION.md.
-- Typed bounded batch inputs, per-item failures, guarded Markdown replacement,
-  paginated keyword search, import/export and bounded file payload uploads.
-
-### Added
-- Doctor CLI, access-token auth, Formula definition and Timeline settings support,
-  structured private/custom space permissions and clear AI opt-in.
-- Commercial 0.20.5 disposable API/browser CI and decoder-fixture version matrix;
-  protected opt-in Cloud checks. Evidence and limitations in COMPATIBILITY.md.
-- Fail-closed collab decoding errors; pycrdt 0.13.0 remains supported/pinned.
-- Installable wheel/CLI, Docker multi-architecture release and official MCP Registry
-  metadata/OIDC publication. PyPI is unconditionally disabled for this release.
-- Reproducible manifest measurements, migration table and client recipes.
+## Unreleased
 
 ### Fixed
-- OAuth-only HTTP deployments now reject unauthenticated MCP requests even when
-  no shared secret is set.
-- Current database-view creation DTO and transient stale-admission rejection;
-  database creation keeps both container view and database IDs.
 
-## Earlier unreleased changes (before 2.0)
+- Mixed-command mutation tools no longer advertise safe automatic retries for
+  creates, imports and appends.
+- OAuth callbacks require a verified allowed Google email. Persisted tokens are
+  rechecked against the allow-list; refreshes preserve resource binding and honor
+  requested scopes. HTTP access requires the `appflowy` scope.
+- OAuth persistence creates private temporary files before writing credentials,
+  loads state atomically and omits credential-bearing exception details from logs.
+- Doctor skips network checks for invalid local configuration and reports missing
+  permitted workspaces. DateTime objects reject invalid timestamps/flags.
+- Loopback HTTP defaults accept custom ports. The deployment helper refuses to
+  overwrite an existing `.env` and no longer implies that it provisions routing.
 
+### Maintenance
 
-### Fixed
-- Prevent duplicate document appends when metadata includes empty `row_data`
-  (#16), and preserve nested block order by appending through collab (#17).
-- **Pinned `mcp>=1.13,<2`.** `mcp` 2.0.0 removed `mcp.server.fastmcp`, which this
-  server is built on, so an unpinned install resolved 2.0.0 and died at import with
-  `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` — breaking every fresh
-  clone and install, and CI along with them. `pyproject.toml` was also out of sync
-  with `requirements.txt`: `mcp`/`pycrdt` unpinned there, and `markdown-it-py` /
-  `mdit-py-plugins` missing entirely despite being imported at module scope.
-- **`append_blocks` silently discarded content given a database row id**
-  ([#1] neighbourhood). AppFlowy's REST `append-block` accepts only a real page-view;
-  handed a row id it returns success and writes nothing — precisely the call used to
-  fold a checklist onto a Kanban card. Rows are now re-routed through the collab
-  layer, matching `add_block` / `add_blocks` / `get_page_markdown`. The page-view
-  path still uses REST for flat content.
-- **Dollar amounts were swallowed as inline math.** With dollarmath's defaults,
-  `"ARR hit $560k this quarter, up from $380k last year."` parsed to
-  `"ARR hit 380k last year."` — both figures and the intervening words silently gone.
-  Markdown is now parsed with `allow_digits=False, allow_space=False`, which keeps
-  real math (`$e^{i\pi}+1=0$`, `$$…$$`) working.
-- **Ruff pinned in CI.** An unpinned linter adopts new rules on release, so a build
-  that passed yesterday fails today with no code change. Pinned, and the 19 findings
-  from ruff 0.16.1 cleared (12 mechanical `dict.get()` rewrites — verified safe
-  against pycrdt `Map`, whose `.get()` matches `dict.get()` — and 4 deliberate
-  resilience fallbacks documented with `# noqa` and a reason).
+- Remove the discovery/comparison page, obsolete design/audit proposals, unused
+  heading-edit code and duplicate async implementations.
+- Keep tests under `tests/`, share deterministic test configuration and correct
+  stale synchronous test stubs. Cancel superseded PR workflow runs.
+- Align user/maintainer docs with current behavior; add architecture, durable agent
+  context and a prioritized roadmap with completion criteria.
 
-### Security
-- **`?token=` is redacted from the access log.** Clients that cannot set an
-  `Authorization` header pass the shared secret in the URL, and uvicorn logged the
-  full request line — printing a working credential to stdout on every request,
-  where `docker logs` exposes it and log shippers archive it. Observed in a deployed
-  sibling server, not hypothetical. Prefer the header where the client supports it;
-  redaction limits blast radius, it does not make a URL secret.
+OAuth sessions without a stored subject, removed allow-list members and tokens
+without the AppFlowy scope must sign in again after upgrading.
 
-- **Pinned `pycrdt==0.13.0`.** 0.14.1 regressed collab decoding — it raised
-  `Cannot decode update: while reading, an unexpected value was found` on some
-  AppFlowy *database* collabs, which silently broke every Tier-2 structural op
-  (`delete_row`, `update_database_field`, `delete_database_field`,
-  `add_/delete_select_option`) on affected boards while row-collab cell writes kept
-  working. Every pre-0.14 version (and the deployed build) decodes those collabs fine.
-- **`update_row_cells` now confirms the write.** It reads the cells back from the
-  authoritative collab and retries on transient contention before returning, so a
-  success result means the change actually stuck (previously a racing/parallel write
-  could report success without landing). New cells also take their field type from the
-  DB collab instead of the lagging fields view, so a write to a just-created field is
-  no longer mis-typed.
+## 2.0.0 — 2026-11-09
 
-### Added
-- PyPI publication is opt-in via `ENABLE_PYPI_PUBLISH`; GHCR releases are independent.
-- Installable Python package and `appflowy-mcp` command for stdio and Streamable
-  HTTP, with `--env-file`, `--help`, and `--version`. Wheels include the OAuth
-  provider and agent guide; existing source entry points remain supported.
-- Clean-install and Docker protocol checks, plus release-triggered PyPI Trusted
-  Publishing and multi-architecture GHCR workflows. See `RELEASING.md` for setup.
-- **Page mentions in Markdown.** `[label](mention:<view_id>)` inserts a live inline
-  mention (link) to another page and round-trips through `get_page_markdown`. AppFlowy's
-  editor has no person-mention type, so this covers page mentions.
-- **Callouts and math blocks in Markdown.** `> [!NOTE]` / `[!TIP]` / `[!WARNING]` GFM
-  alerts render as AppFlowy callouts and `$$…$$` as block equations — both directions
-  (create and `get_page_markdown`). Adds `mdit-py-plugins` for `$`-math parsing.
-- **Agent guide as an MCP resource** (`appflowy://guide`) — the full operator guide
-  (KNOWLEDGE.md) is fetchable in-protocol, so agents pull the deep reference on demand
-  instead of inflating tool descriptions.
-- **Markdown for pages.** `create_page` and `append_blocks` now take a `markdown=`
-  argument — standard Markdown (headings; nested bulleted / numbered / `- [ ]` task
-  lists; quotes; fenced code with language; dividers; images; and inline
-  bold / italic / strikethrough / code / links) is parsed (via `markdown-it-py`) into
-  the AppFlowy block tree. One Markdown content interface for pages and row bodies
-  alike, mirroring Notion's MCP. The JSON `page_data` / `blocks` path stays for blocks
-  Markdown can't express.
-- **Read pages as Markdown.** `get_page_markdown` returns a Document page — or a
-  database row's body — as Markdown (the inverse of `create_page(markdown=...)`), so
-  agents read and write the same format (symmetric with Notion's `fetch`).
-- **Rich inline formatting on in-place edits.** `add_block` and `edit_block_text` now
-  render inline Markdown (bold / italic / strikethrough / code / links) into a block's
-  text instead of writing it plain; code and equation blocks stay literal.
-- **`replace_text`** — content-addressed find-and-replace across a document's blocks
-  (no block ids), the counterpart to Notion's `update_content`.
-- **Collab/CRDT layer** (via `pycrdt`): `update_row_cells`, `delete_row`,
-  `add_block`, `edit_block_text`, `delete_block` — edit, move, and delete *any*
-  existing row or document block (including UI-created ones), and place advanced
-  blocks (callout, toggle, quote, code, …) that the REST API alone can't create.
-- `add_block` / `edit_block_text` / `delete_block` accept a **database row id** for
-  `page_id`, auto-resolving to the row's body document (`uuid5(row_id, "document_id")`),
-  so agents can add checklist sub-tasks to a Kanban card by its row id.
-- **Field/schema editing** (collab/CRDT — AppFlowy exposes no REST for it):
-  `update_database_field` renames a column (or writes its raw `type_option`), and
-  `delete_database_field` removes a column from the schema and every view's column
-  order. The primary/title field is guarded against deletion.
-- **Select-option management** (collab/CRDT): `add_select_option` (returns the new
-  option id to use as a cell value; idempotent by name; strict color validation so a
-  bad color can't wipe the option set) and `delete_select_option` (by option id or
-  label) for SingleSelect/MultiSelect columns.
-- **`set_group_by`** (collab/CRDT): sets which field a Board view groups its columns by.
-  For a SingleSelect/MultiSelect it writes the same group structure the client does — a
-  leading "No <field>" column then one per option — so the board re-groups immediately.
-- **Structure tools**: `create_page`, `create_database` (grid/board/calendar),
-  `create_database_view`, `add_database_field`, `append_blocks`, `create_space`,
-  `move_page`, `duplicate_page`, `trash_page`, `restore_page`, `rename_page`
-  (page/database/space), `list_databases`, `get_page`.
-- **Google-federated OAuth** sign-in with an email allow-list — MCP discovery,
-  dynamic client registration, and PKCE (enabled via `GOOGLE_CLIENT_ID` /
-  `OAUTH_ISSUER`). Clients can connect with just the server URL.
-- Optional **persistent OAuth token store** (`OAUTH_STORE_PATH`): issued tokens +
-  registered clients survive restarts, so a redeploy no longer forces re-sign-in.
-  Atomic `0600` file on a mounted volume; `docker-compose` ships an `oauth-data` volume.
-- **Streamable HTTP** transport (alongside stdio and legacy SSE), an agent
-  **knowledge pack** (server instructions + `KNOWLEDGE.md`), and a server icon.
+- Require Python 3.11+ and the official MCP 2.3+ `MCPServer`; move AppFlowy network
+  calls to native async I/O with modern and legacy protocol support.
+- Expose 11 compact workflow tools, 12 with opt-in experimental AI, plus exclusive
+  legacy 34-tool and compact five-tool read-only profiles.
+- Add typed batches, paginated keyword search, guarded Markdown updates,
+  import/export, small file payload uploads, doctor and access-token login.
+- Add Formula/Timeline schema settings, structured space permissions and
+  fail-closed decoding while retaining pycrdt 0.13.0.
+- Package the CLI/wheel, publish public amd64/arm64 GHCR images and official MCP
+  Registry metadata. PyPI remains disabled.
+- Validate the commercial 0.20.5 disposable stack and visible Web document/Grid
+  content. Add decoder candidates and protected opt-in SaaS checks.
 
-### Changed
-- Endpoint auth now accepts a Bearer header, a `?token=` link, or OAuth.
-- **Tool annotations on every tool** (`readOnlyHint` / `destructiveHint` /
-  `idempotentHint` / `openWorldHint`) so clients and agents can tell reads from writes
-  from irreversible deletes at a glance.
-- **Actionable errors.** All API calls route through one helper that turns a non-2xx into
-  a specific, agent-readable message (status + what to fix + the server's own words)
-  instead of a raw traceback — e.g. a 404 points you at `list_databases`.
-- **General-purpose docs.** Server `instructions` and `KNOWLEDGE.md` rewritten to be
-  domain-neutral (databases / documents / blocks) — recipes, best practices, and the
-  pitfalls section (read-after-write lag, per-row content, id resolution) no longer assume
-  any particular workflow.
-- Agent knowledge pack (`KNOWLEDGE.md` + shipped `instructions`) is a full operator's
-  guide: tool-by-task catalog, how-to recipes, best practices, a pitfalls / "what to
-  avoid" section, and a data-model reference.
+See [MIGRATION.md](MIGRATION.md) for the v1-to-v2 interface mapping and
+[COMPATIBILITY.md](COMPATIBILITY.md) for evidence and limits.
 
-### Security
-- Workspace scoping (`ALLOWED_WORKSPACE_IDS`) enforced on every tool, plus
-  DNS-rebinding protection for the HTTP transports.
+## 0.1.0
 
-### Fixed
-- `create_page` / `create_database` returned a dict but were annotated `-> str`,
-  raising an output-validation error *after* the page was created; they now return
-  the `view_id` string.
-
-## [0.1.0]
-
-- Initial release: workspace/folder/database reads plus row create + upsert over
-  the AppFlowy Cloud REST API.
+Initial workspace/folder/database reads and row create/upsert. Subsequent pre-2.0
+work added Markdown, CRDT block/row/schema edits, OAuth, workspace restrictions and
+HTTP transports. Detailed historical commits remain available in Git history.

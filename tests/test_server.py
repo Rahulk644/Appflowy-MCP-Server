@@ -1,15 +1,7 @@
 """Smoke tests for the security-critical logic: Bearer auth gate, workspace
 guard, and that both HTTP transports boot cleanly."""
 
-import os
-
 import pytest
-
-os.environ.setdefault("APPFLOWY_TOOL_PROFILE", "legacy")
-os.environ.setdefault("MCP_SECRET_TOKEN", "test-secret-123")
-os.environ.setdefault("ALLOWED_WORKSPACE_IDS", "ws-allowed")
-os.environ.setdefault("MCP_ALLOWED_HOSTS", "testserver")
-
 from fastapi.testclient import TestClient
 
 import server
@@ -188,122 +180,6 @@ def test_add_blocks_batch_insert():
     assert "- [ ] **bold** second" in md
     assert "plain note" in md
     assert len(list(cmap["pc"])) == 4  # heading + 2 todos + paragraph, one fold
-
-
-def _document_from_markdown(markdown):
-    from pycrdt import Array, Doc, Map
-
-    doc = Doc()
-    root = doc.get("data", type=Map)
-    with doc.transaction():
-        root["document"] = Map(
-            {
-                "blocks": Map(
-                    {"page": Map({"ty": "page", "data": "{}", "children": "pc"})}
-                ),
-                "meta": Map(
-                    {"children_map": Map({"pc": Array([])}), "text_map": Map()}
-                ),
-                "page_id": "page",
-            }
-        )
-        d = root["document"]
-        bmap, cmap, tmap = d["blocks"], d["meta"]["children_map"], d["meta"]["text_map"]
-        for spec in server._md_to_blocks(markdown):
-            cmap["pc"].append(server._insert_pd_block(bmap, cmap, tmap, spec, "page"))
-    return doc, root["document"]
-
-
-def test_insert_after_heading_preserves_existing_section():
-    doc, document = _document_from_markdown(
-        "# Title\n\n## Target\n\nold body\n\n## Next\n\nkeep me"
-    )
-    with doc.transaction():
-        ids = server._insert_after_heading(document, "Target", "inserted\n\n- item")
-
-    assert len(ids) == 2
-    md = server._doc_to_markdown(document)
-    assert "## Target\n\ninserted\n\n- item\n\nold body\n\n## Next" in md
-    assert "keep me" in md
-
-
-def test_replace_section_uses_heading_boundaries_and_preserves_neighbors():
-    doc, document = _document_from_markdown(
-        "# Before\n\nsafe\n\n## Target\n\nold body\n\n### Nested\n\nremove me\n\n## After\n\nsafe too"
-    )
-    with doc.transaction():
-        ids = server._replace_section(
-            document, "Target", "## Target\n\nnew body\n\n### Nested\n\nnew nested"
-        )
-
-    assert len(ids) == 4
-    md = server._doc_to_markdown(document)
-    assert "# Before\n\nsafe" in md
-    assert "## Target\n\nnew body\n\n### Nested\n\nnew nested" in md
-    assert "old body" not in md
-    assert "remove me" not in md
-    assert "## After\n\nsafe too" in md
-
-
-def test_section_helpers_reject_missing_and_duplicate_headings():
-    doc, document = _document_from_markdown("## Target\n\none\n\n## Target\n\ntwo")
-    with doc.transaction():
-        with pytest.raises(ValueError, match="ambiguous"):
-            server._replace_section(document, "Target", "## Target\n\nnew")
-        with pytest.raises(ValueError, match="not found"):
-            server._insert_after_heading(document, "Missing", "new")
-
-
-def test_section_helpers_can_target_nested_container_heading():
-    from pycrdt import Array, Doc, Map, Text
-
-    doc = Doc()
-    root = doc.get("data", type=Map)
-    with doc.transaction():
-        root["document"] = Map(
-            {
-                "blocks": Map(),
-                "meta": Map({"children_map": Map(), "text_map": Map()}),
-                "page_id": "page",
-            }
-        )
-        d = root["document"]
-        blocks, meta = d["blocks"], d["meta"]
-        cmap, tmap = meta["children_map"], meta["text_map"]
-
-        def add(bid, ty, data, children, text=None):
-            block = {"ty": ty, "data": data, "children": children}
-            if text is not None:
-                ext = f"t-{bid}"
-                block["external_id"] = ext
-                tmap[ext] = Text(text)
-            blocks[bid] = Map(block)
-
-        add("page", "page", "{}", "pc")
-        cmap["pc"] = Array(["parent", "after"])
-        add("parent", "toggle_list", "{}", "parent-children", "Parent")
-        cmap["parent-children"] = Array(["nested-heading", "nested-body"])
-        add(
-            "nested-heading",
-            "heading",
-            '{"level":3}',
-            "nested-heading-children",
-            "Target",
-        )
-        cmap["nested-heading-children"] = Array([])
-        add("nested-body", "paragraph", "{}", "nested-body-children", "old nested")
-        cmap["nested-body-children"] = Array([])
-        add("after", "paragraph", "{}", "after-children", "top level")
-        cmap["after-children"] = Array([])
-
-        server._replace_section(
-            document=d, heading="Target", markdown="### Target\n\nnew nested"
-        )
-
-    md = server._doc_to_markdown(root["document"])
-    assert "new nested" in md
-    assert "old nested" not in md
-    assert "top level" in md
 
 
 def test_appflowy_export_single_page(monkeypatch):
@@ -1297,7 +1173,7 @@ async def test_update_row_cells_confirms_and_creates_new_cell(monkeypatch):
     monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda ws, oid, ct: doc))
     monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *a, **k: None))
     monkeypatch.setattr(server, "_field_types", _async_stub(lambda ws, db: {"F2": 3}))
-    monkeypatch.setattr(server.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(server.asyncio, "sleep", _async_stub(lambda *_: None))
 
     out = await server.update_row_cells(
         "ws-allowed", "db", "row1", '{"F1": "new", "F2": "opt1"}'
@@ -1321,7 +1197,7 @@ async def test_update_row_cells_raises_when_write_never_confirms(monkeypatch):
             doc.get("data", type=Map)["data"]["cells"]["F1"]["data"] = "old"
 
     monkeypatch.setattr(server, "_collab_web_update", _async_stub(revert))
-    monkeypatch.setattr(server.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(server.asyncio, "sleep", _async_stub(lambda *_: None))
 
     with pytest.raises(RuntimeError, match="did not confirm"):
         (await server.update_row_cells("ws-allowed", "db", "row1", '{"F1": "new"}'))
@@ -1336,34 +1212,18 @@ def _mock_http(monkeypatch, handler):
     """
     import httpx
 
-    real_client = _PRISTINE_HTTPX_CLIENT
     real_async_client = _PRISTINE_HTTPX_ASYNC_CLIENT
     monkeypatch.setattr(server, "_async_client", None)
-    monkeypatch.setattr(
-        server.httpx,
-        "Client",
-        lambda **k: real_client(transport=httpx.MockTransport(handler)),
-    )
     monkeypatch.setattr(
         server.httpx,
         "AsyncClient",
         lambda **k: real_async_client(transport=httpx.MockTransport(handler)),
     )
 
-    def sync_auth_headers():
-        return {"Authorization": "Bearer x"}
-
     async def auth_headers():
         return {"Authorization": "Bearer x"}
 
-    monkeypatch.setattr(server, "get_auth_headers", _async_stub(sync_auth_headers))
     monkeypatch.setattr(server, "get_auth_headers_async", auth_headers)
-
-
-def _pristine_httpx_client():
-    import httpx
-
-    return httpx.Client
 
 
 def _pristine_httpx_async_client():
@@ -1372,7 +1232,6 @@ def _pristine_httpx_async_client():
     return httpx.AsyncClient
 
 
-_PRISTINE_HTTPX_CLIENT = _pristine_httpx_client()
 _PRISTINE_HTTPX_ASYNC_CLIENT = _pristine_httpx_async_client()
 
 

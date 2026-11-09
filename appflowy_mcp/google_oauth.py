@@ -16,6 +16,7 @@ import json
 import os
 import secrets
 import sys
+import tempfile
 import time
 from urllib.parse import urlencode
 
@@ -70,27 +71,30 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
         try:
             with open(self.store_path) as f:
                 data = json.load(f)
-            self.clients = {
+            clients = {
                 k: OAuthClientInformationFull.model_validate(v)
                 for k, v in data.get("clients", {}).items()
             }
-            self.access = {
+            access = {
                 k: AccessToken.model_validate(v)
                 for k, v in data.get("access", {}).items()
             }
-            self.refresh = {
+            refresh = {
                 k: RefreshToken.model_validate(v)
                 for k, v in data.get("refresh", {}).items()
             }
+            self.clients, self.access, self.refresh = clients, access, refresh
         except Exception as e:  # noqa: BLE001 - a corrupt/unreadable store must never
             # take the server down; degrade to an empty store and make users re-auth.
             print(
-                f"[oauth] token store unreadable ({e}); starting empty", file=sys.stderr
+                f"[oauth] token store unreadable ({type(e).__name__}); starting empty",
+                file=sys.stderr,
             )
 
     def _save(self) -> None:
         if not self.store_path:
             return
+        temporary = None
         try:
             data = {
                 "clients": {
@@ -104,14 +108,30 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
                 },
             }
             os.makedirs(os.path.dirname(self.store_path) or ".", exist_ok=True)
-            tmp = f"{self.store_path}.tmp"
-            with open(tmp, "w") as f:
+            # NamedTemporaryFile starts private (0600) and avoids a predictable
+            # shared path. Do not write tokens before restricting permissions.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                dir=os.path.dirname(self.store_path) or ".",
+                prefix=".oauth-",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                temporary = f.name
                 json.dump(data, f)
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, self.store_path)  # atomic
+            os.replace(temporary, self.store_path)
         except Exception as e:  # noqa: BLE001 - persistence is best-effort; a failed
             # write (disk full, read-only mount) must not fail the request in flight.
-            print(f"[oauth] could not persist token store ({e})", file=sys.stderr)
+            print(
+                f"[oauth] could not persist token store ({type(e).__name__})",
+                file=sys.stderr,
+            )
+        finally:
+            if temporary and os.path.exists(temporary):
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass  # Preserve best-effort persistence if cleanup also fails.
 
     async def get_client(self, client_id):
         return self.clients.get(client_id)
@@ -166,6 +186,7 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
             client_id=client.client_id,
             scopes=authorization_code.scopes,
             expires_at=now + 30 * 86400,
+            resource=authorization_code.resource,
             subject=authorization_code.subject,
         )
         self._save()
@@ -179,13 +200,23 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
 
     async def load_access_token(self, token):
         t = self.access.get(token)
-        if t and t.expires_at and t.expires_at < time.time():
+        if t and (
+            (t.expires_at is not None and t.expires_at <= time.time())
+            or t.subject not in self.allowed
+        ):
             self.access.pop(token, None)
             return None
         return t
 
     async def load_refresh_token(self, client, refresh_token):
-        return self.refresh.get(refresh_token)
+        token = self.refresh.get(refresh_token)
+        if token and (
+            (token.expires_at is not None and token.expires_at <= time.time())
+            or token.subject not in self.allowed
+        ):
+            self.refresh.pop(refresh_token, None)
+            return None
+        return token
 
     async def exchange_refresh_token(self, client, refresh_token, scopes):
         now = int(time.time())
@@ -193,8 +224,9 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
         self.access[at] = AccessToken(
             token=at,
             client_id=client.client_id,
-            scopes=refresh_token.scopes,
+            scopes=scopes,
             expires_at=now + 3600,
+            resource=refresh_token.resource,
             subject=refresh_token.subject,
         )
         self._save()
@@ -202,7 +234,7 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
             access_token=at,
             token_type="Bearer",
             expires_in=3600,
-            scope=" ".join(refresh_token.scopes or []),
+            scope=" ".join(scopes or []),
             refresh_token=refresh_token.token,
         )
 
@@ -234,8 +266,9 @@ class GoogleOAuthProvider(OAuthAuthorizationServerProvider):
                 GOOGLE_USERINFO, headers={"Authorization": f"Bearer {g_access}"}
             )
             ui.raise_for_status()
-            email = (ui.json().get("email") or "").lower()
-        if email not in self.allowed:
+            identity = ui.json()
+            email = (identity.get("email") or "").lower()
+        if identity.get("verified_email") is not True or email not in self.allowed:
             return JSONResponse(
                 {"error": "access_denied", "detail": f"{email} is not allow-listed"},
                 status_code=403,

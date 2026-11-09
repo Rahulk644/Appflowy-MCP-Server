@@ -8,6 +8,11 @@ echo "=========================================="
 # Run from the repo root (next to docker-compose.yaml).
 cd "$(dirname "$0")"
 
+if [[ -e .env ]]; then
+  echo "An .env file already exists. Configure it and run docker compose up -d --build."
+  exit 1
+fi
+
 read -r -p "Bot AppFlowy email: " APPFLOWY_EMAIL
 read -r -s -p "Bot AppFlowy password: " APPFLOWY_PASSWORD; echo
 read -r -p "Allowed workspace id(s), comma-separated: " ALLOWED_WORKSPACE_IDS
@@ -32,7 +37,7 @@ echo "Building and deploying..."
 docker compose up -d --build
 
 echo "=========================================="
-echo "✅ Deployed. Client config (Streamable HTTP, header auth):"
+echo "Service started. Configure an HTTPS reverse proxy before using this client config:"
 echo "=========================================="
 cat <<EOF
 {

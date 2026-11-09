@@ -1,24 +1,10 @@
-"""AppFlowy MCP Server.
+"""Shared async AppFlowy backend and MCP/HTTP application.
 
-An MCP server over the AppFlowy Cloud REST API. Exposes workspace/folder/database
-reads plus row create + upsert so an AI agent can both see and *finish* work
-(e.g. move a Board card by upserting its Status cell).
-
-Transports:
-  * stdio             — run this file directly (local use).
-  * Streamable HTTP   — mounted at /mcp   (current MCP standard).
-  * SSE               — mounted at /sse   (legacy; kept for existing clients).
-
-Security model (see README/SECURITY):
-  * AppFlowy Cloud has no scoped API keys — auth is full-account GoTrue login.
-    Use a DEDICATED bot account invited to only the workspace(s) you expose.
-  * ALLOWED_WORKSPACE_IDS pins the server to specific workspace(s); every tool
-    refuses any other id (defence-in-depth on top of account isolation).
-  * MCP_SECRET_TOKEN gates every HTTP request. Send it as an `Authorization:
-    Bearer` header (preferred), OR as a `?token=` URL query param ("link method"
-    — for UIs like Claude's connector dialog that can't set a header). With the
-    link method the token rides in the URL and can appear in logs, so treat the
-    whole link like a password.
+The compact workflows reuse this backend; the legacy profile registers its
+original tools here. REST handles ordinary operations and pycrdt sends merging
+updates for structural edits. Supported entry points are appflowy-mcp, python
+server.py, and uvicorn server:app. HTTP authentication is configurable; all HTTP
+clients share the bot account and the server-wide workspace policy.
 """
 
 import asyncio
@@ -56,77 +42,21 @@ USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
 
 # Sent to MCP clients as server instructions — teaches the agent AppFlowy's model,
 # the tool set, the block schema, and the limits so it builds clean structures.
-APPFLOWY_INSTRUCTIONS = """\
-AppFlowy MCP — you can READ and BUILD in this AppFlowy workspace.
-
-MODEL: workspace → Spaces → pages. A page is a Document, or a Database shown as a
-Grid/Board/Calendar/List/Gallery. A Board's columns are a SingleSelect field;
-cards are rows. IMPORTANT: a view_id (from get_workspace_folder) is NOT a
-database_id — call list_databases to map a view to its database_id before using
-row/field tools.
-
-CREATE (clean JSON — the user should never have to set anything up by hand):
-create_page, append_blocks, create_database (grid/board/calendar),
-create_database_view, add_database_field, create_database_row,
-upsert_database_row, create_space, move_page, duplicate_page, trash_page.
-
-EDIT/DELETE ANY ROW (Tier 2 / collab — works even on UI-created rows):
-update_row_cells (change cells on any existing row — e.g. move a Board card by
-setting its Status cell to the target option id), delete_row (hard-delete a row).
-
-EDIT SCHEMA: update_database_field (rename a column) and delete_database_field
-(drop it) — Tier 2/collab, no REST. add_select_option (returns the new option id —
-use THAT as the cell value) and delete_select_option manage SingleSelect/MultiSelect
-options. set_group_by(view_id, field_id) sets which field a Board groups its columns
-by. rename_page renames a page/database/space; restore_page un-trashes a page.
-
-CONTENT IS MARKDOWN EVERYWHERE. create_page(markdown=...), append_blocks(markdown=...),
-and a row/card `document` all take standard Markdown, rendered into real blocks:
-#/##/### headings, "- "/"1. " lists (nestable), "- [ ]" checkboxes, "> " quote,
-```lang fenced code, "---" divider, images, links, GFM callouts (> [!NOTE]/[!TIP]/
-[!WARNING]…), $$ math blocks, and inline **bold**/*italic*/~~strike~~/`code`. Prefer
-markdown for any prose or card body. READ any page or card
-body back AS Markdown with get_page_markdown(page_id) — the inverse (page view id or row id).
-MENTION a page inline with [](mention:<view_id>) — renders as a live link to that page.
-
-For blocks Markdown can't express, pass a page_data JSON block tree instead, e.g.
-{"type":"page","children":[
-  {"type":"heading","data":{"level":1,"delta":[{"insert":"Title"}]}},
-  {"type":"todo_list","data":{"delta":[{"insert":"task"}],"checked":false}},
-  {"type":"divider"}]}
-Block types: paragraph, heading(data.level 1-6), bulleted_list, numbered_list,
-todo_list(data.checked), quote, code(data.language), divider, image(data.url).
-Delta attrs: bold, italic, underline, strikethrough, code, color, href.
-
-FIELD TYPES (add_database_field): 0=RichText 1=Number 2=DateTime 3=SingleSelect
-4=MultiSelect 5=Checkbox 6=URL 7=Checklist 8=LastEditedTime 9=CreatedTime.
-
-EDIT DOCUMENT BLOCKS (Tier 2 / collab): add_block (any type incl. ADVANCED —
-callout, toggle_list, quote, code, heading; pass block-specific `data`),
-edit_block_text (both render inline **Markdown**: bold/italic/code/strike/links),
-replace_text (find-and-replace by content — NO block id needed), delete_block. page_id may be a document view id OR a database ROW
-id — a row id auto-resolves to the card's BODY document, so this is how you add a
-checkbox/sub-task to a Board card. Put per-card checklists in the card BODY, never
-in a shared column (a column value shows on every card).
-
-BEST PRACTICE: To update a row in place instead of creating a duplicate, upsert with a
-stable pre_hash and reuse that pre_hash on later calls. Keep cells for title/status/
-metadata and put long content or checklists in a row's BODY document, never in a shared
-column (a column value shows on every row).
-
-AVOID: (1) Trusting an immediate re-read — get_database_row_details reads /row/detail,
-a materialized view that LAGS the live data by up to minutes; a write can be correct even
-when the re-read still shows the old value, so don't conclude it failed. (2) Guessing a
-database_id from a folder view_id (use list_databases). (3) Full-overwriting a document —
-the edit tools send merging updates; never PUT a whole collab.
-
-LIMITS: in-place edits render inline Markdown (bold/italic/code/strike/links) but not
-text color or underline. NOT SUPPORTED YET (roadmap — see KNOWLEDGE.md §9 Coverage):
-columns, toggle headings, table of contents, @mentions, link-to-page, web-bookmark,
-Drive/iframe embed, file/video/audio upload, List/Gallery/Chart/Feed views, and inline
-or linked database views. AI blocks (AI note/summarize/ask) run AppFlowy's own AI and
-aren't insertable content. Full guide + coverage matrix: MCP resource appflowy://guide
-(also KNOWLEDGE.md in the repo).
+APPFLOWY_INSTRUCTIONS = """AppFlowy legacy tool profile. All network operations are async.
+Use get_workspaces and get_workspace_folder to discover permitted content.
+A folder view_id is not a database_id: use list_databases before row/field calls.
+Read schema with get_database_fields. Use stable pre_hash values for upserts;
+update_row_cells edits an existing row and confirms cells against its collab.
+REST row details can lag, so do not recreate a row because a read is stale.
+Document content accepts Markdown. get_page_markdown reads a page or row body;
+append_blocks, add_block/add_blocks, edit_block_text and replace_text edit bodies.
+Cells hold row properties; checklists and long notes belong in each row's body.
+New page/database IDs and block IDs should be retained for subsequent edits.
+trash_page is reversible; delete_row, delete_block and delete_database_field are
+structural deletions. Check the user's intent before deleting content.
+Collab edits send incremental updates; never replace an entire collab snapshot.
+Read the full operator reference from resource appflowy://guide. Compact workflows
+and structured permissions require APPFLOWY_TOOL_PROFILE=compact on the server.
 """
 
 # Server logo (three kanban columns on AppFlowy purple). Declared in the MCP
@@ -158,15 +88,22 @@ _dns_protect = os.environ.get("MCP_DNS_REBINDING_PROTECTION", "true").lower() !=
 _transport_security = TransportSecuritySettings(
     enable_dns_rebinding_protection=_dns_protect,
     allowed_hosts=_csv_env("MCP_ALLOWED_HOSTS")
-    or ["localhost", "127.0.0.1", "localhost:8000", "127.0.0.1:8000"],
+    or ["localhost", "127.0.0.1", "localhost:*", "127.0.0.1:*", "[::1]", "[::1]:*"],
     allowed_origins=_csv_env("MCP_ALLOWED_ORIGINS")
-    or ["http://localhost", "http://127.0.0.1"],
+    or [
+        "http://localhost",
+        "http://127.0.0.1",
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "http://[::1]",
+        "http://[::1]:*",
+    ],
 )
 
 # streamable_http_path="/" so mounting the app at /mcp yields a clean /mcp/
 # endpoint (not the doubled /mcp/mcp you'd get with the default path).
 COMPACT_INSTRUCTIONS = """AppFlowy workspace tools. Pass arguments inside request. Use appflowy_search to find pages,
-appflowy_fetch(id='self') to discover permitted workspaces, and database(command='list')
+appflowy_fetch(id='self') to discover permitted workspaces, and appflowy_database(command='list')
 to map view IDs to database IDs. Never substitute a view ID for a database ID.
 Rows accept typed cells keyed by exact field name or ID. Batches return per-item
 outcomes; retry failed cell edits by row_id rather than creating duplicates.
@@ -351,10 +288,6 @@ async def _login_async() -> None:
     _token_expires_at = time.time() + expires_in - 60  # 60s buffer
 
 
-async def _login() -> None:
-    await _login_async()  # 60s buffer
-
-
 async def _refresh_async() -> None:
     global _access_token, _refresh_token, _token_expires_at
     if not _refresh_token:
@@ -376,10 +309,6 @@ async def _refresh_async() -> None:
         _refresh_token = body.get("refresh_token")
     expires_in = body.get("expires_in", 3600)
     _token_expires_at = time.time() + expires_in - 60
-
-
-async def _refresh() -> None:
-    await _refresh_async()
 
 
 async def get_auth_headers_async() -> dict:
@@ -406,8 +335,7 @@ async def get_auth_headers_async() -> dict:
     }
 
 
-async def get_auth_headers() -> dict:
-    return await get_auth_headers_async()
+get_auth_headers = get_auth_headers_async
 
 
 # Status-code → what the agent should do about it. Surfaced in tool errors so a
@@ -541,16 +469,6 @@ async def _collab_doc(workspace_id: str, object_id: str, collab_type: int) -> Do
     return _decode_collab(_collab_doc_state(res.json()), collab_type)
 
 
-async def _collab_doc_async(workspace_id: str, object_id: str, collab_type: int) -> Doc:
-    """Fetch a collab object with the async API client and load it into a pycrdt Doc."""
-    res = await _api_call_async(
-        "GET",
-        f"/api/workspace/v1/{workspace_id}/collab/{object_id}",
-        params={"collab_type": collab_type},
-    )
-    return _decode_collab(_collab_doc_state(res.json()), collab_type)
-
-
 class CollabDecodeError(RuntimeError):
     """An incompatible snapshot must never turn into an empty document write."""
 
@@ -664,27 +582,9 @@ async def _open_document(workspace_id: str, page_id: str):
     return doc, page_id, root["document"]
 
 
-async def _open_document_async(workspace_id: str, page_id: str):
-    """Async equivalent of _open_document for v2 read helpers."""
-    root = None
-    try:
-        doc = await _collab_doc_async(workspace_id, page_id, 0)
-        root = doc.get("data", type=Map)
-    except CollabDecodeError:
-        raise
-    except RuntimeError:
-        pass
-    if root is None or "document" not in root:
-        page_id = _row_document_id(page_id)
-        doc = await _collab_doc_async(workspace_id, page_id, 0)
-        root = doc.get("data", type=Map)
-    return doc, page_id, root["document"]
-
-
 async def get_page_markdown_async(workspace_id: str, page_id: str) -> str:
-    _require_workspace(workspace_id)
-    _, _, document = await _open_document_async(workspace_id, page_id)
-    return _doc_to_markdown(document)
+    """Compatibility name for the native async Markdown read."""
+    return await get_page_markdown(workspace_id, page_id)
 
 
 async def _open_database(workspace_id: str, database_id: str):
@@ -801,14 +701,8 @@ async def get_workspace_folder(workspace_id: str, depth: int = 1) -> dict:
 
 
 async def get_workspace_folder_async(workspace_id: str, depth: int = 1) -> dict:
-    """Async REST read for the workspace folder tree."""
-    _require_workspace(workspace_id)
-    path = f"/api/workspace/{workspace_id}/folder"
-    return (
-        (await _api_call_async("GET", path, params={"depth": depth}))
-        .json()
-        .get("data", {})
-    )
+    """Compatibility name used by export and the operator harness."""
+    return await get_workspace_folder(workspace_id, depth)
 
 
 @_legacy_tool(annotations=_READ)
@@ -896,7 +790,7 @@ async def list_updated_rows(
     changed" into a pipeline.
     after: optional cursor/timestamp forwarded to AppFlowy's /row/updated.
     """
-    # ponytail: `after` semantics come straight from AppFlowy's /row/updated;
+    # `after` semantics come from AppFlowy's /row/updated;
     # confirm the exact cursor format against a live workspace before relying on it.
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/database/{database_id}/row/updated"
@@ -935,8 +829,7 @@ async def list_databases(workspace_id: str) -> list:
 # parser) and emit the block tree create_page / append_blocks feed to AppFlowy —
 # one Markdown content interface everywhere. Covers the basic-block palette;
 # unknown constructs fall back to a paragraph so text is never silently dropped.
-# ponytail: MVP palette — callouts/toggles/columns and tables-as-blocks are
-# roadmap (a GFM table degrades to its plaintext for now).
+# Tables fall back to text; columns require a separate structural workflow.
 
 # dollarmath is configured with allow_digits/allow_space OFF, which is a data-loss
 # fix, not a preference. With the defaults, any prose containing two dollar AMOUNTS
@@ -1278,75 +1171,6 @@ def _doc_to_markdown(document) -> str:
     return "".join(parts).strip() + "\n"
 
 
-def _block_plain_text(block, text_map) -> str:
-    ext = block.get("external_id", None)
-    return str(text_map[ext]).strip() if ext is not None and ext in text_map else ""
-
-
-def _heading_level(block) -> int:
-    data = json.loads(block["data"]) if (block.get("data")) else {}
-    return int(data.get("level", 1))
-
-
-def _find_heading_sections(document, heading: str, level: int | None = None) -> list:
-    """Find document sections that start at a matching heading block.
-
-    A section extends until the next sibling heading with the same or higher level.
-    Child arrays are traversed too, so callers can target headings nested inside lists,
-    toggles, or other container blocks without flattening the document first.
-    """
-    blocks, meta = document["blocks"], document["meta"]
-    children_map, text_map = meta["children_map"], meta["text_map"]
-    target = heading.strip()
-    matches = []
-
-    def walk(parent_id: str):
-        children_key = blocks[parent_id].get("children", None)
-        if children_key is None or children_key not in children_map:
-            return
-        children = children_map[children_key]
-        ids = list(children)
-        for index, block_id in enumerate(ids):
-            block = blocks[block_id]
-            if block.get("ty") == "heading":
-                block_level = _heading_level(block)
-                if _block_plain_text(block, text_map) == target and (
-                    level is None or block_level == level
-                ):
-                    end = index + 1
-                    while end < len(ids):
-                        next_block = blocks[ids[end]]
-                        if (
-                            next_block.get("ty") == "heading"
-                            and _heading_level(next_block) <= block_level
-                        ):
-                            break
-                        end += 1
-                    matches.append(
-                        {
-                            "block_id": block_id,
-                            "parent_id": parent_id,
-                            "children_key": children_key,
-                            "start": index,
-                            "end": end,
-                            "level": block_level,
-                        }
-                    )
-            walk(block_id)
-
-    walk(document["page_id"])
-    return matches
-
-
-def _unique_heading_section(document, heading: str, level: int | None = None) -> dict:
-    matches = _find_heading_sections(document, heading, level)
-    if not matches:
-        raise ValueError(f"heading not found: {heading!r}")
-    if len(matches) > 1:
-        raise ValueError(f"heading is ambiguous: {heading!r}")
-    return matches[0]
-
-
 def _delete_block_tree(blocks, children_map, text_map, block_id: str) -> None:
     block = blocks[block_id]
     children_key = block.get("children", None)
@@ -1358,51 +1182,6 @@ def _delete_block_tree(blocks, children_map, text_map, block_id: str) -> None:
     if ext is not None and ext in text_map:
         del text_map[ext]
     del blocks[block_id]
-
-
-def _insert_blocks_into_section(
-    document, section: dict, index: int, markdown: str
-) -> list:
-    specs = _md_to_blocks(markdown)
-    if not specs:
-        return []
-    blocks, meta = document["blocks"], document["meta"]
-    children_map, text_map = meta["children_map"], meta["text_map"]
-    children = children_map[section["children_key"]]
-    ids = []
-    for offset, spec in enumerate(specs):
-        block_id = _insert_pd_block(
-            blocks, children_map, text_map, spec, section["parent_id"]
-        )
-        children.insert(index + offset, block_id)
-        ids.append(block_id)
-    return ids
-
-
-def _insert_after_heading(
-    document, heading: str, markdown: str, level: int | None = None
-) -> list:
-    """Insert Markdown blocks immediately after a unique heading."""
-    section = _unique_heading_section(document, heading, level)
-    return _insert_blocks_into_section(
-        document, section, section["start"] + 1, markdown
-    )
-
-
-def _replace_section(
-    document, heading: str, markdown: str, level: int | None = None
-) -> list:
-    """Replace the unique heading section with Markdown-rendered blocks."""
-    section = _unique_heading_section(document, heading, level)
-    blocks, meta = document["blocks"], document["meta"]
-    children_map, text_map = meta["children_map"], meta["text_map"]
-    children = children_map[section["children_key"]]
-    removed = list(children)[section["start"] : section["end"]]
-    for index in reversed(range(section["start"], section["end"])):
-        del children[index]
-    for block_id in removed:
-        _delete_block_tree(blocks, children_map, text_map, block_id)
-    return _insert_blocks_into_section(document, section, section["start"], markdown)
 
 
 # Code / equation blocks hold literal text; everything else renders inline Markdown.
@@ -1474,12 +1253,12 @@ async def create_page(
 async def create_database(
     workspace_id: str, parent_view_id: str, name: str, layout: str = "grid"
 ) -> str:
-    """Creates a new database page (layout: grid | board | calendar); returns the
-    new view_id. Creates default fields — add more with add_database_field, then
-    resolve the database_id via list_databases."""
+    """Creates a database page with grid, board, calendar, chart, list, gallery,
+    feed, form or timeline layout. Returns the view_id; resolve the database_id
+    via list_databases. Additional layouts depend on the target backend."""
     _require_workspace(workspace_id)
     if layout not in _DB_LAYOUTS:
-        raise ValueError("layout must be one of: grid, board, calendar")
+        raise ValueError("layout must be one of: " + ", ".join(_DB_LAYOUTS))
     body = {
         "parent_view_id": parent_view_id,
         "layout": _DB_LAYOUTS[layout],
@@ -1493,11 +1272,12 @@ async def create_database(
 async def create_database_view(
     workspace_id: str, view_id: str, layout: str, name: str = ""
 ) -> str:
-    """Adds another view (grid | board | calendar) over an EXISTING database's
-    data. view_id: any existing view of the target database."""
+    """Adds a view over an existing database. Layouts: grid, board, calendar,
+    chart, list, gallery, feed, form, timeline. view_id is an existing view of the
+    target database. Availability depends on the backend."""
     _require_workspace(workspace_id)
     if layout not in _DB_LAYOUTS:
-        raise ValueError("layout must be one of: grid, board, calendar")
+        raise ValueError("layout must be one of: " + ", ".join(_DB_LAYOUTS))
     metadata = await get_page(workspace_id, view_id)
     view = metadata.get("view", metadata)
     extra = view.get("extra") or {}
@@ -1631,8 +1411,8 @@ async def delete_database_field(
                 for i in range(len(orders) - 1, -1, -1):
                     if orders[i]["id"] == field_id:
                         del orders[i]
-            # ponytail: also drop the per-view setting; a filter/sort/group that
-            # referenced this field is left for the client to ignore (rare, tolerated).
+            # Remove direct per-view settings. Dependent filters/sorts/grouping
+            # are not rewritten here; see the dependency-cleanup roadmap item.
             if "field_settings" in view and field_id in view["field_settings"]:
                 del view["field_settings"][field_id]
     (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
@@ -2814,16 +2594,20 @@ async def verify_token(request: Request, call_next):
     secret = os.environ.get("MCP_SECRET_TOKEN")
     if not public and (secret or _oauth_provider):
         auth = request.headers.get("Authorization", "")
+        scheme, _, credential = auth.partition(" ")
         # Bearer header (technical clients) or ?token= (link method for UIs that
         # can't set a header — the token then rides in the URL/logs).
         token = (
-            auth[7:]
-            if auth.startswith("Bearer ")
+            credential
+            if scheme.lower() == "bearer"
             else request.query_params.get("token", "")
         )
-        ok = bool(secret and token) and hmac.compare_digest(token, secret)
+        ok = bool(secret and token) and hmac.compare_digest(
+            token.encode(), secret.encode()
+        )
         if not ok and _oauth_provider and token:
-            ok = bool(await _oauth_provider.load_access_token(token))
+            access = await _oauth_provider.load_access_token(token)
+            ok = bool(access and "appflowy" in access.scopes)
         if not ok:
             resp = JSONResponse(
                 status_code=401,
