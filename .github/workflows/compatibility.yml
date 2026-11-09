@@ -25,8 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: '3.12'
     - run: pip install -e '.[dev,browser]'
@@ -41,7 +41,7 @@ jobs:
         APPFLOWY_BROWSER_REPORT: compatibility-reports/browser-ci.json
         APPFLOWY_BROWSER_ARTIFACT_DIR: compatibility-reports/browser-failure
       run: python scripts/selfhost.py test
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: selfhost-compatibility
@@ -60,8 +60,8 @@ jobs:
         version: ['0.13.0', '0.14.1', 'latest']
     continue-on-error: ${{ matrix.version != '0.13.0' }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: '3.12'
     - name: Install candidate decoder
@@ -71,7 +71,7 @@ jobs:
         if [ "$CANDIDATE" = latest ]; then pip install pycrdt; else pip install "pycrdt==$CANDIDATE"; fi
     - name: Decode and mutate captured disposable snapshots
       run: python scripts/check_collab.py | tee pycrdt-report.json
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: pycrdt-${{ matrix.version }}
@@ -95,8 +95,8 @@ jobs:
       APPFLOWY_COMPAT_ALLOW_CI: 'true'
       APPFLOWY_COMPAT_DISPOSABLE_WORKSPACE: 'true'
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: '3.12'
     - run: pip install -e .
@@ -109,7 +109,7 @@ jobs:
         else
           python live_compatibility.py --output cloud-report.json
         fi
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
         name: cloud-compatibility

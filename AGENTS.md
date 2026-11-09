@@ -26,6 +26,8 @@ current project; temporary progress and conversation summaries do not belong her
 - PyPI publication is explicitly deferred; retain the unconditional workflow guard.
 - Change release versions only in `appflowy_mcp/__init__.py`, then stamp/check
   `server.json` with `scripts/release_metadata.py`. Dependencies belong in pyproject.
+- Keep action references pinned to reviewed release commits with version comments.
+  Validate action upgrades independently, including artifact upload/download checks.
 - Cloud/AI checks require suitable disposable deployments. Self-hosted success is
   not SaaS certification. Do not commit credentials or raw private response bodies.
 - DateTime cells store the timestamp in `data` and range/time attributes beside it;

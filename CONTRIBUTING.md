@@ -11,6 +11,11 @@ Declare runtime and development dependencies in `pyproject.toml`. The source
 Run `python scripts/release_metadata.py` when validating a candidate, and see
 [RELEASING.md](RELEASING.md) before changing version metadata.
 
+Workflow actions are pinned to reviewed release commits. Dependabot proposes
+weekly updates, grouping minor/patch maintenance while leaving major upgrades
+separate. Review action release notes and require Linux/Windows, container and
+disposable compatibility checks before merging a workflow upgrade.
+
 ## Development setup
 
 Python 3.11+ is required. From a fork or checkout:
