@@ -85,3 +85,19 @@ Mutation tool hints no longer promise safe automatic retries. Retain batch resul
 IDs and inspect partial failures before repeating a create/import/append.
 Loopback HTTP defaults support custom ports. The deployment helper refuses to
 overwrite `.env`; edit an existing configuration directly when redeploying.
+
+## Next release: rotating OAuth sessions
+
+The OAuth token store gains a versioned format for login-family relationships and
+hashed refresh replay records. Existing registrations survive; existing sessions
+must sign in once again. Clients must save each newly returned refresh token.
+Do not share a refresh token across independent processes: reuse of a rotated
+credential revokes every access/refresh token from that login, including after a
+server restart. Other logins are unaffected. Explicit revocation ends the whole
+login family.
+
+Sign-in state and codes expire after five minutes. Access tokens last at most one
+hour; a login has a fixed 30-day deadline and a maximum of 1,024 rotations. State,
+code and dynamic-registration caches have capacity limits. Storage failures return
+HTTP 503 rather than handing out credentials that were not committed. Keep one
+server worker when using the JSON store.

@@ -143,6 +143,7 @@ async def smoke_http(docker_image: str | None) -> None:
             assert (await client.get(f"{url}/mcp/")).status_code == 401
             metadata = await client.get(f"{url}/.well-known/oauth-authorization-server")
             assert metadata.status_code == 200
+            assert metadata.json()["revocation_endpoint"].endswith("/revoke")
         async with (
             httpx2.AsyncClient(
                 headers={"Authorization": "Bearer packaging-smoke-token"},
