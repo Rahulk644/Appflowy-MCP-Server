@@ -13,6 +13,7 @@ Use Python 3.11+ and the development dependencies:
 python -m pip install -e '.[dev]'
 ruff check .
 ruff format --check .
+python scripts/release_metadata.py
 python -m pytest -q
 python -m build
 python -m twine check dist/*
@@ -35,12 +36,14 @@ Do not use production data to validate a release.
 
 ## Publish
 
-1. Update `project.version` in `pyproject.toml`, the runtime MCP version, and both
-   version references in `server.json`. Keep dependencies in `requirements.txt`
-   consistent with the project metadata.
+1. Set `__version__` in `appflowy_mcp/__init__.py`, then run
+   `python scripts/release_metadata.py --write`. Hatch, the CLI, doctor and MCP
+   handshake share this version; the script stamps and checks `server.json`.
+   Declare dependencies only in `pyproject.toml`; `requirements.txt` is a source
+   installation shim for commands run from the repository root.
 2. Finalize `CHANGELOG.md`, migration notes and relevant compatibility evidence.
    Merge the candidate after required checks pass.
-3. Publish a GitHub Release tagged `v<project.version>` at the verified commit.
+3. Publish a GitHub Release tagged `v<__version__>` at the verified commit.
    Never move an existing release tag or replace an existing versioned image.
 4. Monitor the release workflow. It reruns package and compatibility gates,
    verifies version metadata, and pushes Linux amd64/arm64 images to GHCR.

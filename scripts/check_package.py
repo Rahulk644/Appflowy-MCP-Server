@@ -32,6 +32,18 @@ def main() -> None:
             check=True,
         )
         subprocess.run(
+            [
+                python,
+                "-c",
+                (
+                    "from importlib.metadata import version; from appflowy_mcp import __version__; "
+                    "assert version('appflowy-mcp-server') == __version__; print(__version__)"
+                ),
+            ],
+            cwd=directory,
+            check=True,
+        )
+        subprocess.run(
             [python, "-m", "appflowy_mcp", "--version"], cwd=directory, check=True
         )
         subprocess.run(

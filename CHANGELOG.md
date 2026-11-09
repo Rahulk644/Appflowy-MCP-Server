@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Use one declared package version for builds, CLI, doctor and MCP, and generate
+  registry metadata from it. Keep dependencies in pyproject and validate release
+  tags/image versions in CI, including older-tag registry recovery.
 - Register legacy handlers through an explicit profile table and share behavior
   annotations with compact workflows; keep profile manifests unchanged.
 - Give AppFlowy HTTP/session state a single owner in `api.py`; retain direct Python
