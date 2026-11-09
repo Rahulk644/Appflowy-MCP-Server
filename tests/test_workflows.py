@@ -7,6 +7,7 @@ import pytest
 from mcp import Client
 from pycrdt import Doc, Map
 
+from appflowy_mcp import api as a
 from appflowy_mcp import models as m
 from appflowy_mcp import server as b
 from appflowy_mcp import workflows as w
@@ -54,9 +55,9 @@ async def test_passthrough_refuses_workspace_escape(monkeypatch, path):
 async def test_read_only_enforced_below_tool_registration(monkeypatch):
     monkeypatch.setenv("APPFLOWY_READ_ONLY", "true")
     call = AsyncMock()
-    monkeypatch.setattr(b, "_get_async_client", call)
+    monkeypatch.setattr(a, "_get_async_client", call)
     with pytest.raises(PermissionError, match="writes are disabled"):
-        await b._api_call_async("POST", "/api/workspace/ws-allowed/page-view", json={})
+        await a._api_call_async("POST", "/api/workspace/ws-allowed/page-view", json={})
     call.assert_not_called()
 
 
@@ -327,10 +328,10 @@ async def test_async_requests_overlap_instead_of_blocking_loop(monkeypatch):
         return httpx.Response(200, json={"code": 0, "data": []})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        monkeypatch.setattr(b, "_async_client", client)
-        monkeypatch.setattr(b, "get_auth_headers_async", AsyncMock(return_value={}))
+        monkeypatch.setattr(a, "_async_client", client)
+        monkeypatch.setattr(a, "get_auth_headers_async", AsyncMock(return_value={}))
         await asyncio.gather(
-            *(b._api_call_async("GET", "/api/workspace") for _ in range(3))
+            *(a._api_call_async("GET", "/api/workspace") for _ in range(3))
         )
     assert maximum == 3
 
@@ -380,11 +381,11 @@ async def test_ai_empty_sources_never_expand_to_workspace(monkeypatch):
 async def test_ai_failure_preserves_submitted_question_id(monkeypatch):
     monkeypatch.setenv("APPFLOWY_ENABLE_AI", "true")
     monkeypatch.setattr(w, "api", AsyncMock(side_effect=[{}, {"message_id": 123}]))
-    monkeypatch.setattr(b, "get_auth_headers_async", AsyncMock(return_value={}))
+    monkeypatch.setattr(a, "get_auth_headers_async", AsyncMock(return_value={}))
     async with httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(503))
     ) as client:
-        monkeypatch.setattr(b, "_async_client", client)
+        monkeypatch.setattr(a, "_async_client", client)
         result = await w.appflowy_ai(
             m.AIInput(
                 workspace_id="ws-allowed",
@@ -409,7 +410,7 @@ async def test_database_view_retries_only_explicit_rejected_admission(monkeypatc
         "Failed to apply database update: Database dashboard admission for db changed; retry later"
     )
     post = AsyncMock(side_effect=[rejected, {"view_id": "new-view"}])
-    monkeypatch.setattr(b, "_post", post)
+    monkeypatch.setattr(a, "_post", post)
     pause = AsyncMock()
     monkeypatch.setattr(b.asyncio, "sleep", pause)
     assert await b.create_database_view("ws-allowed", "view", "grid") == "new-view"

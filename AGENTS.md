@@ -35,6 +35,8 @@ current project; temporary progress and conversation summaries do not belong her
   reciprocal cleanup in AppFlowy. Do not claim cross-database dependency inspection.
 - Keep `documents.py` and `collab.py` independent of network/session state. Their
   helpers operate on fetched snapshots; uploads still use backend incremental diffs.
+- `api.py` owns AppFlowy token/client state and workspace guards. Patch the owner
+  in tests; server helper aliases do not mirror mutable globals or override behavior.
 
 ## Validation
 

@@ -20,6 +20,7 @@ pytestmark = [
 async def test_web_renders_mcp_document_and_row(monkeypatch):
     from playwright.async_api import async_playwright, expect
 
+    from appflowy_mcp import api as a
     from appflowy_mcp import models as m
     from appflowy_mcp import server as b
     from appflowy_mcp import workflows as w
@@ -49,8 +50,8 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
     monkeypatch.setenv("APPFLOWY_ACCESS_TOKEN", auth["access_token"])
     monkeypatch.setenv("ALLOWED_WORKSPACE_IDS", ws)
     monkeypatch.delenv("APPFLOWY_READ_ONLY", raising=False)
-    monkeypatch.setattr(b, "BASE_URL", base)
-    await b._close_async_client()
+    monkeypatch.setattr(a, "BASE_URL", base)
+    await a._close_async_client()
     created = []
     try:
         folder = await b.get_workspace_folder(ws, 1)
@@ -295,7 +296,7 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
     finally:
         for page_id in reversed(created):
             await b.trash_page(ws, page_id)
-        await b._close_async_client()
+        await a._close_async_client()
     output = os.environ.get("APPFLOWY_BROWSER_REPORT")
     if output:
         Path(output).write_text(

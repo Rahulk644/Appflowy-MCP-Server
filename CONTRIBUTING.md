@@ -1,5 +1,11 @@
 # Contributing
 
+Keep tests with their module: API/session checks in `tests/test_api.py`, local
+document conversion in `tests/test_documents.py`, and collaboration helpers in
+`tests/test_collab.py`. Patch HTTP/client state in `appflowy_mcp.api`; the server's
+compatibility function aliases are not a second session store. Use the shared
+`mock_appflowy_api` fixture for HTTP-level backend tests.
+
 ## Development setup
 
 Python 3.11+ is required. From a fork or checkout:

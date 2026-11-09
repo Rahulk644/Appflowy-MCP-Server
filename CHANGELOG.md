@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Give AppFlowy HTTP/session state a single owner in `api.py`; retain direct Python
+  helper aliases and close the shared client on both transport shutdown paths.
 - Isolate local Markdown/block conversion and collaboration decoding from the
   network backend; retain the existing tools, entry points and async behavior.
 - Refuse field deletion while local filters, sorts, groups, formulas, calculations
