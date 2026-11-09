@@ -21,7 +21,7 @@ All notable changes are documented here. The format loosely follows
   protected opt-in Cloud checks. Evidence and limitations in COMPATIBILITY.md.
 - Fail-closed collab decoding errors; pycrdt 0.13.0 remains supported/pinned.
 - Installable wheel/CLI, Docker multi-architecture release and official MCP Registry
-  metadata/OIDC publication. PyPI remains disabled until explicitly enabled.
+  metadata/OIDC publication. PyPI is unconditionally disabled for this release.
 - Reproducible manifest measurements, migration table and client recipes.
 
 ### Fixed

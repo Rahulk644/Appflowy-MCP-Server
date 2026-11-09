@@ -39,7 +39,9 @@ jobs:
         PY
 
   pypi:
-    if: vars.ENABLE_PYPI_PUBLISH == 'true'
+    # PyPI is explicitly deferred for this release, regardless of repository settings.
+    # Remove the false guard only after the maintainer chooses to publish to PyPI.
+    if: false && vars.ENABLE_PYPI_PUBLISH == 'true'
     needs: [verify, compatibility, version]
     runs-on: ubuntu-latest
     environment: pypi

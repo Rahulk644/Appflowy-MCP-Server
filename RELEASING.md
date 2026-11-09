@@ -28,9 +28,10 @@ settings to check that the optional provider is packaged.
 
 ## One-time publisher setup
 
-PyPI publication is deferred and disabled by default. Container releases work
-independently. Enable the repository variable `ENABLE_PYPI_PUBLISH=true` only when
-ready to publish to PyPI and after completing the publisher setup below.
+PyPI publication is deferred and unconditionally disabled for 2.0. Container
+releases work independently. A future authorized PyPI release must remove the
+explicit `false` guard in `release.yml` and set `ENABLE_PYPI_PUBLISH=true` after
+completing the publisher setup below. A repository setting alone cannot publish 2.0.
 
 1. Create a GitHub Actions environment named `pypi` in this repository. Set any
    desired release reviewers on that environment.
