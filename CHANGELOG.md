@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Reject command-specific fields that would otherwise be ignored, including row
+  document text on cell-only updates, Markdown on database creation, conflicting
+  block representations and mismatched fetch IDs. Validate whole batches before writes.
 - Fix DateTime cell writes to persist timestamp, range and time flags as separate
   collaboration attributes; preserve unrelated cell metadata and confirm all
   changed attributes on readback.

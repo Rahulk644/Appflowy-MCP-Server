@@ -98,6 +98,9 @@ Traefik labels require an existing proxy and shared Docker network. The optional
 
 The compact profile exposes **11 async tools**, or **12** with experimental AI
 enabled. Parameters are typed JSON inside `request`.
+Commands reject non-default inputs they cannot apply. For example, `update_cells`
+does not accept row document text, and database creation does not accept Markdown.
+Use the relevant document command instead; the validation error names unused fields.
 
 | Tool | Purpose |
 |---|---|
