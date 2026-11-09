@@ -41,7 +41,32 @@ jobs:
         assert registry['version'] == package
         assert registry['packages'][0]['identifier'] == 'ghcr.io/rahulk644/appflowy-mcp-server:' + package
         PY
+    - name: Check whether this version is already published
+      id: published
+      run: |
+        python - <<'PYTHON'
+        import json, os, pathlib, urllib.error, urllib.parse, urllib.request
+        expected = json.loads(pathlib.Path('server.json').read_text())
+        name = urllib.parse.quote(expected['name'], safe='')
+        url = f"https://registry.modelcontextprotocol.io/v0.1/servers/{name}/versions/{expected['version']}"
+        published = False
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                actual = json.load(response)
+            server = actual['server']
+            assert server['name'] == expected['name'] and server['version'] == expected['version']
+            assert server['packages'][0]['identifier'] == expected['packages'][0]['identifier']
+            assert server['packages'][0]['transport'] == expected['packages'][0]['transport']
+            assert actual['_meta']['io.modelcontextprotocol.registry/official']['status'] == 'active'
+            published = True
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write(f'already_published={str(published).lower()}\n')
+        PYTHON
     - name: Download verified tools with bounded retries
+      if: steps.published.outputs.already_published != 'true'
       env:
         COSIGN_VERSION: v2.5.2
         # Same bootstrap digest pinned by sigstore/cosign-installer v3.
@@ -69,6 +94,7 @@ jobs:
         RELEASE_TAG: ${{ inputs.release_tag }}
       run: docker pull "ghcr.io/rahulk644/appflowy-mcp-server:${RELEASE_TAG#v}"
     - name: Authenticate and publish metadata
+      if: steps.published.outputs.already_published != 'true'
       run: |
         ./mcp-publisher login github-oidc
         ./mcp-publisher publish

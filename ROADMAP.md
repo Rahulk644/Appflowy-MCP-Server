@@ -7,7 +7,6 @@ access to a prior chat or review session.
 
 | Priority | Work item | Next action and completion criterion | Constraint |
 |---|---|---|---|
-| High | Ship the reviewed fixes as 2.0.1 | After the maintenance PR passes, update package/runtime/registry versions, publish a new patch, verify anonymous image pulls and active registry metadata. Include the verified-email and token allow-list behavior in migration notes. | 2.0.0 is already published; never overwrite its tag or image. PyPI remains disabled. |
 | High | Complete OAuth lifecycle controls | Expire/prune abandoned authorization states and codes; add public-client refresh rotation and family revocation. Test replay, expiry, restart and real MCP-client login/refresh. | Current JSON store is single-process; changing token semantics requires protocol tests and client validation. |
 | High | Validate current AppFlowy SaaS | Configure the protected Cloud job with a dedicated disposable workspace; run reads, then authorized mutations and cleanup. Commit only a sanitized report. | Needs operator-managed test account/secrets; no credentials in chat or repository. |
 | Medium | Reproduce the historical decoder failure | Obtain a sanitized failing database snapshot; demonstrate decode/mutation behavior on supported and candidate pycrdt versions. Propose an upstream patch or upgrade only with representative evidence. | The committed fresh fixture passes 0.13.0/0.14.1 and is not the historical reproducer. |
