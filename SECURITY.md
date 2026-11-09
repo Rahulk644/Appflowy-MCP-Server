@@ -36,8 +36,13 @@ Google sign-in must use an allowed, verified email. On current `main`, persisted
 access and refresh tokens are checked against the current email allow-list;
 legacy tokens without a subject require sign-in again. OAuth tokens must carry
 the `appflowy` scope. Refreshes preserve resource binding and the requested scope.
-See [CHANGELOG.md](CHANGELOG.md) for fixes not yet present in the published release
-and [ROADMAP.md](ROADMAP.md) for remaining lifecycle controls.
+Refresh credentials rotate. Reuse of an already-rotated credential revokes its
+login family; explicit logout/revocation also ends the family. Replay metadata is
+persisted as hashes. Login deadlines do not extend during refresh. Pending state
+and authorization codes expire after five minutes. Failed storage commits return
+503 and do not issue new credentials. The JSON store supports one worker only.
+See [CHANGELOG.md](CHANGELOG.md) for changes not yet present in a published release
+and [ROADMAP.md](ROADMAP.md) for deployment-validation gaps.
 
 Keep secrets and private response bodies out of issues, fixtures, benchmarks,
 reports and screenshots. Disposable integration accounts are test-only.

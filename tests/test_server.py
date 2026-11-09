@@ -1667,10 +1667,12 @@ def test_appflowy_fetch_list_bounds_and_markdown_truncation(monkeypatch):
     assert md["total_chars"] == 6
 
 
-def test_oauth_store_persists_across_instances(tmp_path):
-    # Tokens must survive a restart: a fresh provider pointed at the same store
-    # file reloads what a prior instance saved (this is what stops re-sign-in).
-    from mcp.server.auth.provider import AccessToken
+@pytest.mark.asyncio
+async def test_oauth_store_persists_across_instances(tmp_path):
+    import time
+    from types import SimpleNamespace
+
+    from mcp.server.auth.provider import AuthorizationCode
 
     from google_oauth import GoogleOAuthProvider
 
@@ -1678,16 +1680,24 @@ def test_oauth_store_persists_across_instances(tmp_path):
     p = GoogleOAuthProvider(
         "https://mcp.example.com", "cid", "sec", ["a@b.com"], store_path=path
     )
-    p.access["tok1"] = AccessToken(
-        token="tok1", client_id="c1", scopes=["appflowy"], expires_at=9999999999
+    code = AuthorizationCode(
+        code="code",
+        client_id="c1",
+        scopes=["appflowy"],
+        expires_at=time.time() + 300,
+        code_challenge="challenge",
+        redirect_uri="http://localhost/callback",
+        redirect_uri_provided_explicitly=True,
+        subject="a@b.com",
+        resource=p.issuer,
     )
-    p._save()
-
-    p2 = GoogleOAuthProvider(
+    p.codes[code.code] = code
+    result = await p.exchange_authorization_code(SimpleNamespace(client_id="c1"), code)
+    restarted = GoogleOAuthProvider(
         "https://mcp.example.com", "cid", "sec", ["a@b.com"], store_path=path
     )
-    assert "tok1" in p2.access
-    assert p2.access["tok1"].client_id == "c1"
+    token = await restarted.load_access_token(result.access_token)
+    assert token and token.client_id == "c1"
 
 
 def test_md_to_blocks_covers_core_palette():

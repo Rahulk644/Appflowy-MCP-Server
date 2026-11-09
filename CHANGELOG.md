@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Expire abandoned OAuth state/codes; prune expired token records and bound public
+  registration/transient caches.
+- Rotate refresh tokens with fixed login deadlines, hashed replay records, and
+  durable revocation of the affected login family. Other logins remain independent.
+- Enable standards-compliant public/Basic/post-client token revocation and advertise
+  supported client authentication methods.
+- Refuse uncommitted token issuance/rotation when persistent storage fails; keep
+  client registration and credential changes consistent on retry.
+- Validate the official MCP SDK login, PKCE, refresh, replay, reauthentication and
+  revocation flow over HTTP with a mocked Google identity exchange.
+- Existing OAuth token stores require one new sign-in for the upgraded token format;
+  client registrations are retained.
+
 ## 2.0.1 — 2026-11-09
 
 ### Fixed

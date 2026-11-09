@@ -22,7 +22,7 @@ The source contracts were also checked against AppFlowy-Web commit
 | Formula expression and Timeline settings | Collab write/readback | Schema support; formula evaluation and full Timeline UI behavior are not certified |
 | Structured private/custom space ACL | Live write/readback | No multi-user authorization penetration test |
 | MCP 2 server and input errors | Protocol contract tests plus clean-install stdio/HTTP | Desktop product UIs not individually certified |
-| Google OAuth routing and persistence | Offline auth/discovery/provider tests | No real Google sign-in performed in CI |
+| Google OAuth routing and persistence | Official MCP SDK HTTP login/PKCE/refresh/replay/revocation contract and provider tests | No real Google sign-in performed in CI |
 | AI chat | Current Web contract and decoder tests | Answer generation needs an AI-enabled deployment; opt-in and experimental |
 | AppFlowy SaaS | Protected opt-in harness | No current Cloud account/workspace configured for this release |
 

@@ -54,7 +54,13 @@ process. CPU work such as Markdown parsing and snapshot decoding remains local.
 OAuth stores are in memory unless `OAUTH_STORE_PATH` is set. File writes use a
 private temporary file and atomic replacement. This is a **single-process store**,
 not a shared database. Multiple workers can overwrite each other's state; use one
-worker until shared storage and token lifecycle controls are implemented.
+worker. Refresh credentials rotate inside a fixed login family. Hashed spent-token
+records detect reuse and revoke that family's access and refresh grants, including
+after restart. Token writes commit before credentials are returned. Transient
+sign-in state/codes and expired grants are pruned on provider activity. A narrow
+SDK 2.3 revocation adapter accepts public clients without a secret and Basic clients
+without a form client ID; authentication still delegates to the SDK. Contract
+coverage retains CORS, request-body limits and confidential-client secret checks.
 
 ## Data integrity
 

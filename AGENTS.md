@@ -20,6 +20,8 @@ current project; temporary progress and conversation summaries do not belong her
   AppFlowy identity; do not claim per-client page scopes or AppFlowy user roles.
 - Collab changes send incremental diffs. Never write an empty replacement after a
   decode error. Keep pycrdt 0.13.0 pinned until representative fixtures justify change.
+- OAuth refreshes rotate within a persisted login family. Replays revoke that family.
+  Keep the JSON store single-process; do not issue tokens before a successful commit.
 - Preserve root compatibility entry points and documented commands.
 - PyPI publication is explicitly deferred; retain the unconditional workflow guard.
 - Cloud/AI checks require suitable disposable deployments. Self-hosted success is

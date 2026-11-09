@@ -7,7 +7,7 @@ access to a prior chat or review session.
 
 | Priority | Work item | Next action and completion criterion | Constraint |
 |---|---|---|---|
-| High | Complete OAuth lifecycle controls | Expire/prune abandoned authorization states and codes; add public-client refresh rotation and family revocation. Test replay, expiry, restart and real MCP-client login/refresh. | Current JSON store is single-process; changing token semantics requires protocol tests and client validation. |
+| High | Validate actual Google sign-in in a desktop client | Complete a real browser sign-in/refresh/revocation round trip against the deployed Google OAuth client. | Official MCP SDK HTTP flow is validated with mocked Google identity; no Google client deployment is configured here. |
 | High | Validate current AppFlowy SaaS | Configure the protected Cloud job with a dedicated disposable workspace; run reads, then authorized mutations and cleanup. Commit only a sanitized report. | Needs operator-managed test account/secrets; no credentials in chat or repository. |
 | Medium | Reproduce the historical decoder failure | Obtain a sanitized failing database snapshot; demonstrate decode/mutation behavior on supported and candidate pycrdt versions. Propose an upstream patch or upgrade only with representative evidence. | The committed fresh fixture passes 0.13.0/0.14.1 and is not the historical reproducer. |
 | Medium | Broaden visible typed-cell coverage | Add live/browser cases for select/multi-select, Number, DateTime, options and Board grouping; verify both visible values and authoritative readback. | Existing UI checks cover document text and a Grid title; do not infer coverage for every field type. |

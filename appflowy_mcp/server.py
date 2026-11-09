@@ -34,6 +34,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from pycrdt import Array, Doc, Map, Text
 from pydantic import BaseModel, Field, ValidationError
+from starlette.exceptions import HTTPException
 
 BASE_URL = os.environ.get("APPFLOWY_BASE_URL", "https://beta.appflowy.cloud").rstrip(
     "/"
@@ -2606,7 +2607,12 @@ async def verify_token(request: Request, call_next):
             token.encode(), secret.encode()
         )
         if not ok and _oauth_provider and token:
-            access = await _oauth_provider.load_access_token(token)
+            try:
+                access = await _oauth_provider.load_access_token(token)
+            except HTTPException as exc:
+                return JSONResponse(
+                    status_code=exc.status_code, content={"detail": exc.detail}
+                )
             ok = bool(access and "appflowy" in access.scopes)
         if not ok:
             resp = JSONResponse(
@@ -2639,23 +2645,13 @@ async def icon_svg():
 
 
 if _oauth_provider:
-    from mcp.server.auth.routes import (
-        create_auth_routes,
-        create_protected_resource_routes,
-    )
-    from mcp.server.auth.settings import ClientRegistrationOptions
+    from mcp.server.auth.routes import create_protected_resource_routes
     from pydantic import AnyHttpUrl
 
+    from .google_oauth import create_oauth_routes
+
     _issuer = AnyHttpUrl(OAUTH_ISSUER)
-    app.router.routes.extend(
-        create_auth_routes(
-            _oauth_provider,
-            _issuer,
-            client_registration_options=ClientRegistrationOptions(
-                enabled=True, valid_scopes=["appflowy"], default_scopes=["appflowy"]
-            ),
-        )
-    )
+    app.router.routes.extend(create_oauth_routes(_oauth_provider))
     app.router.routes.extend(
         create_protected_resource_routes(
             resource_url=_issuer,

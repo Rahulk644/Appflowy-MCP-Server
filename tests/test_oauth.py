@@ -9,10 +9,8 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import pytest
 from mcp.server.auth.provider import (
-    AccessToken,
     AuthorizationCode,
     AuthorizationParams,
-    RefreshToken,
 )
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -50,6 +48,7 @@ async def test_refresh_preserves_audience_and_honors_narrowed_scopes():
         resource="https://mcp.example.com",
         subject="member@example.com",
     )
+    p.codes[code.code] = code
     initial = await p.exchange_authorization_code(client(), code)
     refresh = await p.load_refresh_token(client(), initial.refresh_token)
     assert refresh.resource == code.resource
@@ -63,13 +62,17 @@ async def test_refresh_preserves_audience_and_honors_narrowed_scopes():
 async def test_removed_member_cannot_reuse_persisted_access_or_refresh(tmp_path):
     path = tmp_path / "oauth.json"
     p = provider(path)
-    p.access["access"] = AccessToken(
+    p.access["access"] = oauth._AccessGrant(
+        family_id="family",
+        resource=p.issuer,
         token="access",
         client_id="client",
         scopes=["appflowy"],
         subject="member@example.com",
     )
-    p.refresh["refresh"] = RefreshToken(
+    p.refresh["refresh"] = oauth._RefreshGrant(
+        family_id="family",
+        resource=p.issuer,
         token="refresh",
         client_id="client",
         scopes=["appflowy"],
@@ -87,14 +90,18 @@ async def test_removed_member_cannot_reuse_persisted_access_or_refresh(tmp_path)
 @pytest.mark.asyncio
 async def test_expired_tokens_are_refused_by_the_provider():
     p = provider()
-    p.access["access"] = AccessToken(
+    p.access["access"] = oauth._AccessGrant(
+        family_id="family",
+        resource=p.issuer,
         token="access",
         client_id="client",
         scopes=["appflowy"],
         expires_at=int(time.time()) - 1,
         subject="member@example.com",
     )
-    p.refresh["refresh"] = RefreshToken(
+    p.refresh["refresh"] = oauth._RefreshGrant(
+        family_id="family",
+        resource=p.issuer,
         token="refresh",
         client_id="client",
         scopes=["appflowy"],
