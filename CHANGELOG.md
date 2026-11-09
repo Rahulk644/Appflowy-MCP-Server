@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Isolate local Markdown/block conversion and collaboration decoding from the
+  network backend; retain the existing tools, entry points and async behavior.
 - Refuse field deletion while local filters, sorts, groups, formulas, calculations
   or view layouts reference it. Keep rejection read-only, clean direct form-field
   settings on successful deletion, and delegate Relation deletion to AppFlowy.
