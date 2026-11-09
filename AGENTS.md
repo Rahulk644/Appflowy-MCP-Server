@@ -33,6 +33,8 @@ current project; temporary progress and conversation summaries do not belong her
 - Field deletion must reject active local schema/view references before mutation.
   Only order/direct settings are cleaned automatically; Relation deletion needs
   reciprocal cleanup in AppFlowy. Do not claim cross-database dependency inspection.
+- Keep `documents.py` and `collab.py` independent of network/session state. Their
+  helpers operate on fetched snapshots; uploads still use backend incremental diffs.
 
 ## Validation
 

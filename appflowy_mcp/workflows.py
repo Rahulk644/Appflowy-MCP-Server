@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from pycrdt import Map
 
+from . import documents as d
 from . import models as m
 
 MAX_RESULT_CHARS = 50_000
@@ -208,7 +209,7 @@ async def rewrite_document(
 ):
     b = backend()
     doc, object_id, document = await b._open_document(ws, page_id)
-    current = b._doc_to_markdown(document)
+    current = d._doc_to_markdown(document)
     if expected is None:
         raise ValueError(
             "expected_markdown is required: read the page before replacing its content"
@@ -229,11 +230,11 @@ async def rewrite_document(
         children = cmap[root["children"]]
         if not prepend:
             for child in list(children):
-                b._delete_block_tree(blocks, cmap, tmap, child)
+                d._delete_block_tree(blocks, cmap, tmap, child)
             while len(children):
                 del children[0]
-        for index, spec in enumerate(b._md_to_blocks(markdown)):
-            block_id = b._insert_pd_block(blocks, cmap, tmap, spec, root_id)
+        for index, spec in enumerate(d._md_to_blocks(markdown)):
+            block_id = d._insert_pd_block(blocks, cmap, tmap, spec, root_id)
             children.insert(index if prepend else len(children), block_id)
     await b._collab_web_update(ws, object_id, doc, state, 0)
     return {"id": page_id, "updated": True}

@@ -21,7 +21,9 @@ MCP transport → profile/tool registration → typed workflow → workspace gua
 | `appflowy_mcp/models.py` | Compact input schemas, bounds and permission objects |
 | `appflowy_mcp/workflows.py` | Compact orchestration, typed cells, pagination and batch results |
 | `appflowy_mcp/database_schema.py` | Read-only field dependency inspection and Formula property references |
-| `appflowy_mcp/server.py` | Shared async backend, Markdown/CRDT conversion, legacy tools, MCP/HTTP lifecycle |
+| `appflowy_mcp/documents.py` | Local Markdown parsing/rendering, block trees and document CRDT conversion |
+| `appflowy_mcp/collab.py` | Snapshot decoding, CRDT values and collaboration identity helpers |
+| `appflowy_mcp/server.py` | Shared async network backend, legacy tools and MCP/HTTP lifecycle |
 | `appflowy_mcp/google_oauth.py` | Google identity federation and token/client persistence |
 | `appflowy_mcp/diagnostics.py` | Offline checks and optional sanitized connection diagnostics |
 | Root `server.py` / `google_oauth.py` | Documented compatibility entry points |
@@ -29,8 +31,8 @@ MCP transport → profile/tool registration → typed workflow → workspace gua
 | `scripts/` | Build/install checks, manifest measurement, decoder checks and disposable stack runner |
 | `live_compatibility.py` | Operator harness for an explicitly configured deployment |
 
-The backend is still large. Extraction into API, document and database modules is
-follow-up work; do not replace it with speculative plugin/factory layers. The
+API/session handling and legacy registration still share the backend module.
+Keep further extraction behavior-preserving; do not add speculative factories. The
 compatibility entry points and async-name aliases have callers and remain intentional.
 
 ## Profiles and annotations
