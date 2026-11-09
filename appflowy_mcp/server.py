@@ -9,12 +9,14 @@ clients share the bot account and the server-wide workspace policy.
 
 import asyncio
 import base64
+import hashlib
 import hmac
 import json
 import logging
 import os
 import re
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
@@ -388,16 +390,26 @@ async def get_workspace_folder(workspace_id: str, depth: int = 1) -> dict:
     Fetches the folder structure (pages and databases) of a workspace.
     Useful for finding the database_id to query.
     """
+    return await get_folder_view_async(workspace_id, workspace_id, depth)
+
+
+get_workspace_folder_async = get_workspace_folder
+
+
+async def get_folder_view_async(
+    workspace_id: str, view_id: str, depth: int = 1
+) -> dict:
+    """Fetch only the requested folder subtree using the current Web contract."""
     a._require_workspace(workspace_id)
-    path = f"/api/workspace/{workspace_id}/folder"
-    return (
-        (await a._api_call("GET", path, params={"depth": depth})).json().get("data", {})
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", view_id):
+        raise ValueError("view_id must be a resource ID without path separators")
+    response = await a._api_call(
+        "GET", f"/api/workspace/{workspace_id}/view/{view_id}", params={"depth": depth}
     )
-
-
-async def get_workspace_folder_async(workspace_id: str, depth: int = 1) -> dict:
-    """Compatibility name used by export and the operator harness."""
-    return await get_workspace_folder(workspace_id, depth)
+    tree = response.json().get("data", {})
+    if not isinstance(tree, dict) or _folder_node_id(tree) != view_id:
+        raise RuntimeError("AppFlowy returned an unexpected folder subtree")
+    return tree
 
 
 async def get_database_fields(workspace_id: str, database_id: str) -> list:
@@ -1138,23 +1150,15 @@ async def appflowy_fetch(
     workspace_id = a._default_workspace_id(workspace_id)
 
     if kind == "workspace_folder":
-        tree = (
-            (
-                await a._api_call_async(
-                    "GET",
-                    f"/api/workspace/{workspace_id}/folder",
-                    params={"depth": depth},
-                )
-            )
-            .json()
-            .get("data", {})
-        )
+        target = workspace_id if id == "self" else id
+        tree = await get_folder_view_async(workspace_id, target, depth)
         bounded_tree, truncated, nodes_visited = _bound_folder_tree(
             tree, max_nodes=max_folder_nodes
         )
         return _fetch_envelope(
             kind="workspace_folder",
             workspace_id=workspace_id,
+            id=target,
             data=bounded_tree,
             truncated=truncated,
             depth=depth,
@@ -1195,19 +1199,38 @@ async def appflowy_fetch(
             raise ValueError("id must be a page/view id for kind='page'")
         if response_format == "markdown":
             markdown = await get_page_markdown_async(workspace_id, id)
-            truncated = len(markdown) > max_markdown_chars
-            return _fetch_envelope(
-                kind="page",
-                workspace_id=workspace_id,
-                id=id,
-                data={
-                    "format": "markdown",
-                    "markdown": markdown[:max_markdown_chars],
-                },
-                truncated=truncated,
-                max_markdown_chars=max_markdown_chars,
-                total_chars=len(markdown),
-            )
+            end = min(len(markdown), offset + max_markdown_chars)
+            # Keep escaped JSON text within the compact response budget too.
+            low, high = offset, end
+            while low < high:
+                middle = (low + high + 1) // 2
+                if (
+                    len(json.dumps(markdown[offset:middle], ensure_ascii=False))
+                    <= 40_000
+                ):
+                    low = middle
+                else:
+                    high = middle - 1
+            end = low
+            has_more = end < len(markdown)
+            return {
+                **_fetch_envelope(
+                    kind="page",
+                    workspace_id=workspace_id,
+                    id=id,
+                    data={
+                        "format": "markdown",
+                        "markdown": markdown[offset:end],
+                    },
+                    truncated=has_more,
+                    max_markdown_chars=max_markdown_chars,
+                    total_chars=len(markdown),
+                ),
+                "offset": offset,
+                "next_offset": end if has_more else None,
+                "has_more": has_more,
+                "content_hash": hashlib.sha256(markdown.encode()).hexdigest(),
+            }
         return _fetch_envelope(
             kind="page",
             workspace_id=workspace_id,
@@ -1250,38 +1273,15 @@ def _folder_node_children(node: dict) -> list[dict]:
     return children
 
 
-def _find_folder_node(tree, view_id: str):
-    if isinstance(tree, dict):
-        if _folder_node_id(tree) == view_id:
-            return tree
-        for child in _folder_node_children(tree):
-            found = _find_folder_node(child, view_id)
-            if found is not None:
-                return found
-        for key, value in tree.items():
-            if key in {"children", "items", "views"}:
-                continue
-            if isinstance(value, (dict, list)):
-                found = _find_folder_node(value, view_id)
-                if found is not None:
-                    return found
-    elif isinstance(tree, list):
-        for child in tree:
-            found = _find_folder_node(child, view_id)
-            if found is not None:
-                return found
-    return None
-
-
 def _safe_export_path_segment(name: str) -> str:
     clean = re.sub(r"[\\/\x00-\x1f]+", "-", name).strip(" .")
-    return clean or "untitled"
+    return clean[:200] or "untitled"
 
 
 APPFLOWY_EXPORT_MAX_DEPTH = 5
 APPFLOWY_EXPORT_MAX_LIMIT = 100
 APPFLOWY_EXPORT_MAX_WARNINGS = 25
-APPFLOWY_EXPORT_LOCATE_DEPTH = 4
+APPFLOWY_EXPORT_RESULT_CHARS = 40_000
 
 AppFlowyExportDepth = Annotated[int, Field(ge=0, le=APPFLOWY_EXPORT_MAX_DEPTH)]
 AppFlowyExportLimit = Annotated[int, Field(ge=1, le=APPFLOWY_EXPORT_MAX_LIMIT)]
@@ -1292,6 +1292,7 @@ class AppFlowyExportInput(BaseModel):
     view_id: str
     depth: AppFlowyExportDepth = 0
     limit: AppFlowyExportLimit = 50
+    offset: int = Field(default=0, ge=0)
 
 
 def _export_warning(message: str, **details) -> dict:
@@ -1310,17 +1311,13 @@ async def appflowy_export(
     view_id: str,
     depth: AppFlowyExportDepth = 0,
     limit: AppFlowyExportLimit = 50,
+    offset: int = 0,
 ) -> dict:
-    """Exports a page, and optionally its child pages, as Markdown entries.
+    """Export complete Markdown entries with a bounded response and tree cursor.
 
-    Returns:
-      {"entries": [{"path": "Page.md", "id": "...", "markdown": "..."}],
-       "warnings": [...], "has_more": false}
-
-    depth=0 exports only `view_id`. depth=1 includes direct children found in the
-    workspace folder tree, depth=2 includes grandchildren, and so on. Database/table
-    views or unsupported blocks that cannot be opened as a document are reported as
-    warnings instead of aborting the whole export.
+    offset counts breadth-first page attempts, including unavailable pages. Large
+    individual documents produce an explicit paginated-Markdown fetch request;
+    partial text is never presented as a complete exported file.
     """
     try:
         params = AppFlowyExportInput(
@@ -1328,102 +1325,131 @@ async def appflowy_export(
             view_id=view_id,
             depth=depth,
             limit=limit,
+            offset=offset,
         )
     except ValidationError as exc:
         raise ValueError(str(exc)) from exc
-    workspace_id = params.workspace_id
-    view_id = params.view_id
-    depth = params.depth
-    limit = params.limit
-
+    depth, limit, offset = params.depth, params.limit, params.offset
     a._require_workspace(workspace_id)
-
-    # Locate the requested root with a fixed, bounded folder read; traversal below then
-    # follows only the located subtree and the requested export depth.
-    folder = (
-        await get_workspace_folder_async(
-            workspace_id, depth=APPFLOWY_EXPORT_LOCATE_DEPTH
-        )
-        if depth
-        else {}
-    )
-    root = _find_folder_node(folder, view_id) if folder else None
-    root_name = _folder_node_name(root, view_id) if isinstance(root, dict) else view_id
-    queue = [(view_id, _safe_export_path_segment(root_name), 0, root)]
-    entries = []
+    root = None
     warnings = []
+    if depth:
+        try:
+            root = await get_folder_view_async(workspace_id, view_id, depth)
+        except RuntimeError:
+            if not await _is_database_row(workspace_id, view_id):
+                raise
+            warnings.append(
+                _export_warning(
+                    "A row body has no folder children; exporting its document only",
+                    id=view_id,
+                    type="row_has_no_folder_children",
+                )
+            )
+    root_name = _folder_node_name(root, view_id) if root else view_id
+    queue = deque([(view_id, _safe_export_path_segment(root_name), 0, root)])
+    entries, seen_paths = [], set()
+    position = attempted = 0
+    next_offset = None
     warnings_truncated = False
-    if depth and root is None:
-        _append_export_warning(
-            warnings,
-            _export_warning(
-                "target was not found in the bounded workspace folder tree; "
-                "exporting the requested page only",
-                id=view_id,
-                path="",
-                type="target_not_found",
-            ),
-        )
-    seen_paths = set()
-    has_more = False
-    attempted = 0
+    used_chars = len(
+        json.dumps({"entries": [], "warnings": warnings}, ensure_ascii=False)
+    )
 
     while queue:
-        current_id, current_path, current_depth, node = queue.pop(0)
-        if attempted >= limit:
-            has_more = True
-            break
-        attempted += 1
-
+        current_id, current_path, current_depth, node = queue.popleft()
         path = f"{current_path}.md"
         suffix = 2
         while path in seen_paths:
             path = f"{current_path}-{suffix}.md"
             suffix += 1
         seen_paths.add(path)
-
+        if current_depth < depth and isinstance(node, dict):
+            for child in _folder_node_children(node):
+                child_id = _folder_node_id(child)
+                if child_id:
+                    child_name = _safe_export_path_segment(
+                        _folder_node_name(child, child_id)
+                    )
+                    queue.append(
+                        (
+                            child_id,
+                            f"{path.removesuffix('.md')}/{child_name}",
+                            current_depth + 1,
+                            child,
+                        )
+                    )
+        current_position = position
+        position += 1
+        if current_position < offset:
+            continue
+        if attempted >= limit:
+            next_offset = current_position
+            break
+        attempted += 1
         try:
             markdown = await get_page_markdown_async(workspace_id, current_id)
-            entries.append({"path": path, "id": current_id, "markdown": markdown})
         except Exception:
             if current_id == view_id:
                 raise
-            warnings_truncated = (
-                not _append_export_warning(
-                    warnings,
-                    _export_warning(
-                        "page could not be exported as Markdown",
-                        id=current_id,
-                        path=path,
-                        type="document_unavailable",
-                    ),
-                )
-                or warnings_truncated
+            warning = _export_warning(
+                "page could not be exported as Markdown",
+                id=current_id,
+                path=path,
+                type="document_unavailable",
             )
+            cost = len(json.dumps(warning, ensure_ascii=False)) + (2 if warnings else 0)
+            if (
+                used_chars + cost > APPFLOWY_EXPORT_RESULT_CHARS
+                or not _append_export_warning(warnings, warning)
+            ):
+                warnings_truncated = True
+                next_offset = current_position
+                break
+            used_chars += cost
             continue
-
-        child_base_path = path.removesuffix(".md")
-        if current_depth >= depth or not isinstance(node, dict):
-            continue
-        for child in _folder_node_children(node):
-            child_id = _folder_node_id(child)
-            if not child_id:
-                continue
-            child_name = _safe_export_path_segment(_folder_node_name(child, child_id))
-            queue.append(
-                (
-                    child_id,
-                    f"{child_base_path}/{child_name}",
-                    current_depth + 1,
-                    child,
-                )
+        entry = {"path": path, "id": current_id, "markdown": markdown}
+        cost = len(json.dumps(entry, ensure_ascii=False)) + (2 if entries else 0)
+        if cost > APPFLOWY_EXPORT_RESULT_CHARS - 1000:
+            warning = _export_warning(
+                "Document exceeds one export response; fetch its Markdown in chunks",
+                id=current_id,
+                path=path,
+                type="document_requires_paging",
+                continuation={
+                    "tool": "appflowy_fetch",
+                    "request": {
+                        "workspace_id": workspace_id,
+                        "id": current_id,
+                        "response_format": "markdown",
+                        "offset": 0,
+                    },
+                },
             )
-
+            warning_cost = len(json.dumps(warning, ensure_ascii=False)) + (
+                2 if warnings else 0
+            )
+            if (
+                used_chars + warning_cost > APPFLOWY_EXPORT_RESULT_CHARS
+                or not _append_export_warning(warnings, warning)
+            ):
+                warnings_truncated = True
+                next_offset = current_position
+            elif queue:
+                next_offset = position
+            break
+        if used_chars + cost > APPFLOWY_EXPORT_RESULT_CHARS:
+            next_offset = current_position
+            break
+        entries.append(entry)
+        used_chars += cost
     return {
         "entries": entries,
         "warnings": warnings,
         "warnings_truncated": warnings_truncated,
-        "has_more": has_more,
+        "has_more": next_offset is not None,
+        "offset": offset,
+        "next_offset": next_offset,
     }
 
 
@@ -1439,7 +1465,7 @@ async def update_row_cells(
     """Updates cells on an EXISTING row — works for ANY row, including ones created
     in the UI (Tier 2 / collab). cells: JSON object {field_id: value}. Values:
     text → string; SingleSelect → the option id (see get_database_fields
-    type_option options); Checkbox → "Yes"/"No"; Number/URL → string. Only the
+    type_option options); Checkbox → "Yes"/"No"; Number/URL → string.
     DateTime → {"data": "unix-seconds", "end_timestamp": "", "include_time": true,
     "is_range": false}; date attributes are stored beside data. Only the given
     cells change. To move a Board card, set its Status field's cell.

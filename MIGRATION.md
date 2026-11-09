@@ -91,7 +91,9 @@ IDs and inspect partial failures before repeating a create/import/append.
 Loopback HTTP defaults support custom ports. The deployment helper refuses to
 overwrite `.env`; edit an existing configuration directly when redeploying.
 
-## Next release: rotating OAuth sessions
+## Upgrading from 2.0.1 to 2.0.2
+
+### Rotating OAuth sessions
 
 The OAuth token store gains a versioned format for login-family relationships and
 hashed refresh replay records. Existing registrations survive; existing sessions
@@ -106,3 +108,15 @@ hour; a login has a fixed 30-day deadline and a maximum of 1,024 rotations. Stat
 code and dynamic-registration caches have capacity limits. Storage failures return
 HTTP 503 rather than handing out credentials that were not committed. Keep one
 server worker when using the JSON store.
+
+### Bounded continuations
+
+Client-paged lists may return fewer items than requested. Use `next_offset`, rather
+than adding `limit`. Oversized records carry `content_omitted` with a stable identity;
+missing materialized row details carry `unavailable`. Neither marker is full content.
+
+Markdown fetches accept a character `offset` and return `content_hash`, `has_more`
+and `next_offset`. Concatenate chunks only when hashes agree. Folder fetches accept
+an optional subtree `id`. Export adds a breadth-first attempt `offset`, returns
+complete files, and supplies a separate Markdown-fetch request for oversized files.
+Tree and document continuations operate on live reads; restart if content changes.

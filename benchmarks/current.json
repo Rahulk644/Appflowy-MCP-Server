@@ -45,34 +45,34 @@
     {
       "profile": "legacy",
       "tool_count": 34,
-      "schema_bytes": 30779,
+      "schema_bytes": 31111,
       "instructions_bytes": 1167,
       "async_tools": 34,
-      "schema_reduction_vs_v1_percent": -0.3
+      "schema_reduction_vs_v1_percent": -1.4
     },
     {
       "profile": "compact",
       "tool_count": 11,
-      "schema_bytes": 18290,
+      "schema_bytes": 18368,
       "instructions_bytes": 757,
       "async_tools": 11,
-      "schema_reduction_vs_v1_percent": 40.4
+      "schema_reduction_vs_v1_percent": 40.1
     },
     {
       "profile": "compact_ai",
       "tool_count": 12,
-      "schema_bytes": 19902,
+      "schema_bytes": 19980,
       "instructions_bytes": 757,
       "async_tools": 12,
-      "schema_reduction_vs_v1_percent": 35.1
+      "schema_reduction_vs_v1_percent": 34.9
     },
     {
       "profile": "read_only",
       "tool_count": 5,
-      "schema_bytes": 5862,
+      "schema_bytes": 5940,
       "instructions_bytes": 757,
       "async_tools": 5,
-      "schema_reduction_vs_v1_percent": 80.9
+      "schema_reduction_vs_v1_percent": 80.6
     }
   ],
   "measurement": "UTF-8 bytes of serialized tool definitions; excludes client-specific lazy loading and tokenization",

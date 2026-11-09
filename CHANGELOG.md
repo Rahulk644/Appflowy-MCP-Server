@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Preserve complete list records and continuation cursors within response bounds;
+  keep identities for oversized or temporarily unavailable rows.
+- Scope folder/export reads to the requested subtree. Export complete Markdown files
+  with a tree cursor, stop reads at the output budget, and provide chunk-fetch
+  instructions for oversized documents. Add Markdown character offsets and revision hashes.
+- Measure synthetic row, subtree export and snapshot decode workloads; document the
+  remaining full-list/snapshot costs and the limits of benchmark evidence.
+
 - Upgrade workflow actions to verified release commits using Node 24, verify
   distribution upload/download on Linux and Windows, and enable weekly action updates.
 - Wait through the disposable stack's explicit temporary search-unavailable state

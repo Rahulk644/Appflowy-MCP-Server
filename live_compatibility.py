@@ -296,7 +296,7 @@ async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any
     folder = await recorder.record(
         name="folder_traversal_depth_1",
         method="GET",
-        route="/api/workspace/{workspace_id}/folder",
+        route="/api/workspace/{workspace_id}/view/{workspace_id}",
         operation=lambda: server.get_workspace_folder_async(workspace_id, depth=1),
     )
 

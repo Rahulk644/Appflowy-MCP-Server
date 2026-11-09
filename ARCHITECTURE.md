@@ -88,8 +88,20 @@ cleanup. These checks do not scan other databases for incoming references.
 
 Markdown replacement requires the expected fetched content. This protects against
 an already-stale read but cannot prevent edits arriving after that snapshot.
-Client-side list paging bounds responses; some upstream routes still return a
-complete list. Response limits do not establish a bound on upstream snapshot size.
+Client-side list paging keeps complete records and their continuation, or an
+explicit identity-only marker for a record exceeding the response budget. Row
+reads select IDs before fetching details and restore ID order; missing materialized
+records become retryable identity-bearing placeholders.
+
+Folder reads use the current Web `/view/{view_id}` route with requested depth.
+Export reads that subtree, traverses breadth-first with an attempt offset, and
+stops document reads at its response budget. It returns complete files; oversized
+files carry a chunked-Markdown fetch request. Paths and continuation order are
+stable only while the live tree stays unchanged. Markdown chunks use character
+offsets and a full-content SHA-256 to detect revision changes; they do not hold an
+atomic snapshot across requests. Each chunk still reads/decodes the whole collab.
+Full upstream row ID lists and document snapshots remain unbounded by the output
+budget. Synthetic measurements and their limits live in `benchmarks/README.md`.
 
 ## Source and release policy
 
