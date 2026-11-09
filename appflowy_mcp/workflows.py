@@ -10,8 +10,10 @@ from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import quote
 
+import httpx
 from pycrdt import Map
 
+from . import api as a
 from . import documents as d
 from . import models as m
 
@@ -31,9 +33,7 @@ def identifier(value: str, name: str) -> str:
 
 
 def workspace(request: m.Input) -> str:
-    return identifier(
-        backend()._default_workspace_id(request.workspace_id), "workspace_id"
-    )
+    return identifier(a._default_workspace_id(request.workspace_id), "workspace_id")
 
 
 def required(request, name: str) -> str:
@@ -104,7 +104,7 @@ def render(value: dict, response_format: str) -> dict:
 
 
 async def api(method: str, path: str, **kwargs):
-    response = await backend()._api_call_async(method, path, **kwargs)
+    response = await a._api_call_async(method, path, **kwargs)
     if not response.content:
         return None
     value = response.json()
@@ -794,7 +794,7 @@ async def appflowy_import(request: m.ImportInput) -> dict:
                     "ok": True,
                     "name": entry.name,
                     "file_id": file_id,
-                    "url": f"{b.BASE_URL}/api/file_storage/{ws}/v1/blob/{request.parent_view_id}/{quote(file_id, safe='')}",
+                    "url": f"{a.BASE_URL}/api/file_storage/{ws}/v1/blob/{request.parent_view_id}/{quote(file_id, safe='')}",
                 }
             )
         except (ValueError, RuntimeError) as exc:
@@ -906,14 +906,14 @@ async def appflowy_ai(request: m.AIInput) -> dict:
         raise RuntimeError(
             "Question was submitted but returned no message ID; do not resubmit blindly"
         )
-    client = await b._get_async_client()
+    client = await a._get_async_client()
     # Bound the streamed body before decoding; no historical non-streaming route.
     try:
         async with asyncio.timeout(120):
             async with client.stream(
                 "POST",
-                b.BASE_URL + path + "/answer/stream",
-                headers=await b.get_auth_headers_async(),
+                a.BASE_URL + path + "/answer/stream",
+                headers=await a.get_auth_headers_async(),
                 json={
                     "question_id": question_id,
                     "chat_id": chat,
@@ -928,7 +928,7 @@ async def appflowy_ai(request: m.AIInput) -> dict:
                         raise RuntimeError("AI answer exceeded the response limit")
                     chunks.append(chunk)
         answer = decode_answer("".join(chunks))
-    except (TimeoutError, b.httpx.HTTPError, ValueError, RuntimeError) as exc:
+    except (TimeoutError, httpx.HTTPError, ValueError, RuntimeError) as exc:
         return {
             "ok": False,
             "partial": True,

@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import server
+from appflowy_mcp import api as a
 
 LIVE_VALIDATED = "live_validated"
 CURRENT_WEB_OBSERVED = "current_web_observed"
@@ -272,7 +273,7 @@ def _extract_row_field_id(fields: Any, preferred: str) -> str:
 
 
 async def _api_json(method: str, path: str, **kwargs) -> Any:
-    return (await server._api_call_async(method, path, **kwargs)).json().get("data")
+    return (await a._api_call_async(method, path, **kwargs)).json().get("data")
 
 
 async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any]:
@@ -582,7 +583,7 @@ def _report(
 def _public_base_url() -> str:
     # Keep host-level context without leaking paths, query strings, credentials, or
     # tokens that may appear in custom test URLs.
-    parsed = urlsplit(server.BASE_URL)
+    parsed = urlsplit(a.BASE_URL)
     if not parsed.scheme or not parsed.hostname:
         return "unspecified"
     host = parsed.hostname.lower()

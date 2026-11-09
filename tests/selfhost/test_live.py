@@ -20,6 +20,7 @@ pytestmark = [
 
 
 async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
+    from appflowy_mcp import api as a
     from appflowy_mcp import models as m
     from appflowy_mcp import server as b
     from appflowy_mcp import workflows as w
@@ -49,8 +50,8 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
     monkeypatch.setenv("APPFLOWY_PASSWORD", credentials["password"])
     monkeypatch.setenv("ALLOWED_WORKSPACE_IDS", ws)
     monkeypatch.delenv("APPFLOWY_READ_ONLY", raising=False)
-    monkeypatch.setattr(b, "BASE_URL", base)
-    await b._close_async_client()
+    monkeypatch.setattr(a, "BASE_URL", base)
+    await a._close_async_client()
     checks, created = [], []
     completed = False
     search_token = "mcpsearch" + uuid4().hex
@@ -64,10 +65,10 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             ("_refresh_token", None),
             ("_token_expires_at", 0),
         ):
-            monkeypatch.setattr(b, key, value)
-        await b._login_async()
-        assert b._access_token and b._refresh_token
-        await b._refresh_async()
+            monkeypatch.setattr(a, key, value)
+        await a._login_async()
+        assert a._access_token and a._refresh_token
+        await a._refresh_async()
         assert any(item["workspace_id"] == ws for item in await b.get_workspaces())
         passed("password_login_and_token_refresh")
         folder = await b.get_workspace_folder(ws, 2)
@@ -134,12 +135,12 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         file = uploaded["files"][0]
         async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
             downloaded = await client.get(
-                file["url"], headers=await b.get_auth_headers_async()
+                file["url"], headers=await a.get_auth_headers_async()
             )
             downloaded.raise_for_status()
             assert downloaded.content == payload
             removed = await client.delete(
-                file["url"], headers=await b.get_auth_headers_async()
+                file["url"], headers=await a.get_auth_headers_async()
             )
             removed.raise_for_status()
         passed("file_upload_download_and_cleanup")
@@ -207,7 +208,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         )
         assert len(result["items"]) <= 1
         passed("bounded_row_listing")
-        response = await b._api_call_async(
+        response = await a._api_call_async(
             "GET", f"/api/workspace/v1/{ws}/collab/{db}", params={"collab_type": 1}
         )
         snapshot = b._collab_doc_state(response.json())
@@ -386,7 +387,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
                         "error_type": type(exc).__name__,
                     }
                 )
-        await b._close_async_client()
+        await a._close_async_client()
         report = {
             "schema": "appflowy-mcp.integration-report.v1",
             "deployment": {

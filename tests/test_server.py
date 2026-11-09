@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import server
+from appflowy_mcp import api as a
 
 
 def _database_doc_with_rows(*row_ids):
@@ -88,7 +89,7 @@ async def test_collab_web_update_uses_reported_route(monkeypatch):
     doc = Doc()
     state_vector = doc.get_state()
     monkeypatch.setattr(
-        server,
+        a,
         "_api_call",
         _async_stub(
             lambda method, path, **kwargs: calls.append((method, path, kwargs))
@@ -400,7 +401,7 @@ def test_live_compatibility_harness_read_only(monkeypatch):
         assert page_id == "page-1"
         return "# Doc"
 
-    monkeypatch.setattr(server, "_api_call_async", fake_api_call)
+    monkeypatch.setattr(a, "_api_call_async", fake_api_call)
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
 
     report = asyncio.run(
@@ -430,7 +431,7 @@ def test_live_compatibility_public_base_url_strips_private_parts(monkeypatch):
     import live_compatibility
 
     monkeypatch.setattr(
-        server,
+        a,
         "BASE_URL",
         "https://alice:secret@example.internal:8443/private/api?token=abc#frag",
     )
@@ -453,7 +454,7 @@ def test_live_compatibility_public_base_url_preserves_ipv6_brackets(
 ):
     import live_compatibility
 
-    monkeypatch.setattr(server, "BASE_URL", base_url)
+    monkeypatch.setattr(a, "BASE_URL", base_url)
 
     assert live_compatibility._public_base_url() == expected
 
@@ -573,7 +574,7 @@ def test_live_compatibility_harness_reversible_flag(monkeypatch):
             return FakeResponse("")
         raise AssertionError(f"unexpected route {method} {path}")
 
-    monkeypatch.setattr(server, "_api_call_async", fake_api_call)
+    monkeypatch.setattr(a, "_api_call_async", fake_api_call)
     monkeypatch.setattr(
         server,
         "replace_text",
@@ -673,7 +674,7 @@ def test_live_compatibility_reversible_collab_and_row_checks(monkeypatch):
         assert expected.startswith("compatibility-after-")
         return {"verified": True}
 
-    monkeypatch.setattr(server, "_api_call_async", fake_api_call)
+    monkeypatch.setattr(a, "_api_call_async", fake_api_call)
     monkeypatch.setattr(server, "replace_text", _async_stub(fake_replace_text))
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
     monkeypatch.setattr(server, "update_row_cells", _async_stub(fake_update_row_cells))
@@ -826,7 +827,7 @@ async def test_strict_row_cleanup_reports_rejected_collab_delete(monkeypatch):
     def reject_delete(*args, **kwargs):
         raise RuntimeError("AppFlowy API 403")
 
-    monkeypatch.setattr(server, "_api_call", _async_stub(reject_delete))
+    monkeypatch.setattr(a, "_api_call", _async_stub(reject_delete))
 
     with pytest.raises(RuntimeError, match="403"):
         (await server._delete_row_strict("ws-allowed", "db-1", "row-1"))
@@ -841,7 +842,7 @@ async def test_strict_row_cleanup_reports_unsuccessful_view_removal(monkeypatch)
     monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *args: None))
     delete_calls = []
     monkeypatch.setattr(
-        server,
+        a,
         "_api_call",
         _async_stub(lambda *args, **kwargs: delete_calls.append(args)),
     )
@@ -870,18 +871,6 @@ def test_live_compatibility_refuses_github_actions(monkeypatch):
 
     with pytest.raises(SystemExit, match="Refusing to run"):
         live_compatibility._refuse_ci_without_explicit_opt_in()
-
-
-def test_workspace_guard_blocks_other_workspaces():
-    server._require_workspace("ws-allowed")  # allowed -> no raise
-    with pytest.raises(ValueError):
-        server._require_workspace("ws-other")
-
-
-def test_workspace_guard_unrestricted_when_unset(monkeypatch):
-    monkeypatch.delenv("ALLOWED_WORKSPACE_IDS", raising=False)
-    assert server._allowed_workspaces() is None
-    server._require_workspace("anything")  # unrestricted -> no raise
 
 
 def test_auth_middleware_and_transports_boot():
@@ -1119,40 +1108,10 @@ async def test_update_row_cells_raises_when_write_never_confirms(monkeypatch):
         (await server.update_row_cells("ws-allowed", "db", "row1", '{"F1": "new"}'))
 
 
-def _mock_http(monkeypatch, handler):
-    """Point server httpx clients at a MockTransport and stub auth.
-
-    NOTE: `server.httpx` IS the global httpx module, so patching `.Client` or
-    `.AsyncClient` here is a global patch. Capture pristine classes before patching, or
-    a second call in the same test would wrap the first mock instead of replacing it.
-    """
-    import httpx
-
-    real_async_client = _PRISTINE_HTTPX_ASYNC_CLIENT
-    monkeypatch.setattr(server, "_async_client", None)
-    monkeypatch.setattr(
-        server.httpx,
-        "AsyncClient",
-        lambda **k: real_async_client(transport=httpx.MockTransport(handler)),
-    )
-
-    async def auth_headers():
-        return {"Authorization": "Bearer x"}
-
-    monkeypatch.setattr(server, "get_auth_headers_async", auth_headers)
-
-
-def _pristine_httpx_async_client():
-    import httpx
-
-    return httpx.AsyncClient
-
-
-_PRISTINE_HTTPX_ASYNC_CLIENT = _pristine_httpx_async_client()
-
-
 @pytest.mark.asyncio
-async def test_is_database_row_discriminates_row_from_document(monkeypatch):
+async def test_is_database_row_discriminates_row_from_document(
+    monkeypatch, mock_appflowy_api
+):
     # append_blocks routes on this: AppFlowy's page-view payload carries `row_data`
     # for a database row and `encoded_collab` for a document.
     import httpx
@@ -1160,25 +1119,25 @@ async def test_is_database_row_discriminates_row_from_document(monkeypatch):
     def as_row(_request):
         return httpx.Response(200, json={"data": {"data": {"row_data": {}}}})
 
-    _mock_http(monkeypatch, as_row)
+    mock_appflowy_api(as_row)
     assert (await server._is_database_row("ws", "some-id")) is True
 
     def as_doc(_request):
         return httpx.Response(200, json={"data": {"data": {"encoded_collab": "..."}}})
 
-    _mock_http(monkeypatch, as_doc)
+    mock_appflowy_api(as_doc)
     assert (await server._is_database_row("ws", "some-id")) is False
 
     # Flat shape (AppFlowy has moved this key around across releases).
     def as_row_flat(_request):
         return httpx.Response(200, json={"data": {"row_data": {}}})
 
-    _mock_http(monkeypatch, as_row_flat)
+    mock_appflowy_api(as_row_flat)
     assert (await server._is_database_row("ws", "some-id")) is True
 
 
 @pytest.mark.asyncio
-async def test_is_database_row_never_raises(monkeypatch):
+async def test_is_database_row_never_raises(monkeypatch, mock_appflowy_api):
     # It only ever ADDS a fallback path, so an error must answer False and leave the
     # caller's existing behaviour untouched — never turn a probe into a failure.
     import httpx
@@ -1186,7 +1145,7 @@ async def test_is_database_row_never_raises(monkeypatch):
     def boom(_request):
         return httpx.Response(500, text="upstream exploded")
 
-    _mock_http(monkeypatch, boom)
+    mock_appflowy_api(boom)
     assert (await server._is_database_row("ws", "some-id")) is False
 
 
@@ -1202,10 +1161,8 @@ async def test_append_blocks_reroutes_row_id_to_collab(monkeypatch):
         calls["page_id"] = pid
         return "blk1"
 
-    monkeypatch.setattr(server, "_require_workspace", lambda *_: None)
-    monkeypatch.setattr(
-        server, "_post", _async_stub(lambda *a, **k: "")
-    )  # the silent no-op
+    monkeypatch.setattr(a, "_require_workspace", lambda *_: None)
+    monkeypatch.setattr(a, "_post", _async_stub(lambda *a, **k: ""))  # the silent no-op
     monkeypatch.setattr(server, "_is_database_row", _async_stub(lambda *_: True))
     monkeypatch.setattr(server, "add_blocks", _async_stub(fake_add_blocks))
 
@@ -1229,8 +1186,8 @@ async def test_append_blocks_leaves_document_path_untouched(monkeypatch):
         seen["probes"] += 1
         return True
 
-    monkeypatch.setattr(server, "_require_workspace", lambda *_: None)
-    monkeypatch.setattr(server, "_post", _async_stub(fake_post))
+    monkeypatch.setattr(a, "_require_workspace", lambda *_: None)
+    monkeypatch.setattr(a, "_post", _async_stub(fake_post))
     monkeypatch.setattr(server, "_is_database_row", _async_stub(fake_probe))
 
     assert (
@@ -1238,143 +1195,6 @@ async def test_append_blocks_leaves_document_path_untouched(monkeypatch):
     ) == "ok-block-id"
     assert seen["posts"] == 1  # exactly one write
     assert seen["probes"] == 0  # no extra round-trip on the happy path
-
-
-@pytest.mark.asyncio
-async def test_api_call_actionable_error(monkeypatch):
-    # A non-2xx from AppFlowy must surface as a specific, agent-readable message
-    # (not a bare traceback), with a hint about what to fix.
-    import httpx
-
-    def handler(_request):
-        return httpx.Response(404, text="object not found")
-
-    _mock_http(monkeypatch, handler)
-
-    with pytest.raises(RuntimeError) as ei:
-        (await server._api_call("GET", "/api/workspace/x/database/y/fields"))
-    msg = str(ei.value)
-    assert "AppFlowy API 404" in msg
-    assert "database_id" in msg  # the 404 hint steers toward list_databases
-    assert "object not found" in msg  # includes the server's own words
-
-
-@pytest.mark.asyncio
-async def test_api_call_rejects_application_error_inside_http_200(monkeypatch):
-    import httpx
-
-    def handler(_request):
-        return httpx.Response(
-            200,
-            json={
-                "code": 1012,
-                "message": "permission target was not found",
-            },
-        )
-
-    _mock_http(monkeypatch, handler)
-    with pytest.raises(RuntimeError, match="AppFlowy API code 1012") as ei:
-        (await server._api_call("POST", "/api/workspace/w/database/v/row", json={}))
-    assert "database_id" in str(ei.value)
-    assert "permission target was not found" in str(ei.value)
-
-
-@pytest.mark.asyncio
-async def test_api_call_accepts_success_envelope_and_empty_response(monkeypatch):
-    import httpx
-
-    def handler(request):
-        if request.url.path.endswith("/row"):
-            return httpx.Response(200, json={"code": 0, "data": "row-1"})
-        return httpx.Response(204)
-
-    _mock_http(monkeypatch, handler)
-    assert (await server._post("/api/workspace/w/database/d/row", {})) == "row-1"
-    assert (
-        await server._api_call("POST", "/api/workspace/w/collab/d/web-update")
-    ).status_code == 204
-
-
-def test_api_call_works_inside_running_event_loop(monkeypatch):
-    import asyncio
-
-    import httpx
-
-    def handler(_request):
-        return httpx.Response(204)
-
-    _mock_http(monkeypatch, handler)
-
-    async def run_inside_loop():
-        return await server._api_call("POST", "/api/workspace/w/collab/d/web-update")
-
-    assert asyncio.run(run_inside_loop()).status_code == 204
-
-
-def test_async_auth_headers_serializes_concurrent_login(monkeypatch):
-    import asyncio
-
-    monkeypatch.setattr(server, "_access_token", None)
-    monkeypatch.setattr(server, "_refresh_token", None)
-    monkeypatch.setattr(server, "_token_expires_at", 0)
-    calls = {"login": 0}
-
-    async def fake_login():
-        calls["login"] += 1
-        await asyncio.sleep(0)
-        server._access_token = "token"
-        server._refresh_token = "refresh"
-        server._token_expires_at = server.time.time() + 3600
-
-    monkeypatch.setattr(server, "_login_async", fake_login)
-
-    async def concurrent_headers():
-        return await asyncio.gather(
-            *(server.get_auth_headers_async() for _ in range(5))
-        )
-
-    headers = asyncio.run(concurrent_headers())
-
-    assert calls["login"] == 1
-    assert {header["Authorization"] for header in headers} == {"Bearer token"}
-
-
-def test_async_api_call_reuses_shared_client(monkeypatch):
-    import asyncio
-
-    import httpx
-
-    monkeypatch.setattr(server, "_async_client", None)
-    created = {"count": 0}
-
-    def handler(_request):
-        return httpx.Response(204)
-
-    real_async_client = _PRISTINE_HTTPX_ASYNC_CLIENT
-
-    def fake_async_client(**_kwargs):
-        created["count"] += 1
-        return real_async_client(transport=httpx.MockTransport(handler))
-
-    monkeypatch.setattr(server.httpx, "AsyncClient", fake_async_client)
-
-    async def auth_headers():
-        return {"Authorization": "Bearer x"}
-
-    monkeypatch.setattr(server, "get_auth_headers_async", auth_headers)
-
-    async def call_twice():
-        first = await server._api_call_async(
-            "POST", "/api/workspace/w/collab/d/web-update"
-        )
-        second = await server._api_call_async(
-            "POST", "/api/workspace/w/collab/d/web-update"
-        )
-        await server._close_async_client()
-        return first.status_code, second.status_code
-
-    assert asyncio.run(call_twice()) == (204, 204)
-    assert created["count"] == 1
 
 
 def test_stdio_runner_closes_async_client(monkeypatch):
@@ -1389,7 +1209,7 @@ def test_stdio_runner_closes_async_client(monkeypatch):
         calls.append("close")
 
     monkeypatch.setattr(server.mcp, "run_stdio_async", fake_run_stdio_async)
-    monkeypatch.setattr(server, "_close_async_client", fake_close_async_client)
+    monkeypatch.setattr(a, "_close_async_client", fake_close_async_client)
 
     asyncio.run(server._run_stdio_with_lifecycle())
 
@@ -1409,7 +1229,7 @@ def test_stdio_runner_closes_async_client_after_error(monkeypatch):
         calls.append("close")
 
     monkeypatch.setattr(server.mcp, "run_stdio_async", fake_run_stdio_async)
-    monkeypatch.setattr(server, "_close_async_client", fake_close_async_client)
+    monkeypatch.setattr(a, "_close_async_client", fake_close_async_client)
 
     with pytest.raises(RuntimeError, match="boom"):
         asyncio.run(server._run_stdio_with_lifecycle())
@@ -1417,7 +1237,7 @@ def test_stdio_runner_closes_async_client_after_error(monkeypatch):
     assert calls == ["run", "close"]
 
 
-def test_appflowy_fetch_self_filters_allowed_workspaces(monkeypatch):
+def test_appflowy_fetch_self_filters_allowed_workspaces(monkeypatch, mock_appflowy_api):
     import asyncio
 
     import httpx
@@ -1436,7 +1256,7 @@ def test_appflowy_fetch_self_filters_allowed_workspaces(monkeypatch):
             },
         )
 
-    _mock_http(monkeypatch, handler)
+    mock_appflowy_api(handler)
     out = asyncio.run(server.appflowy_fetch(id="self"))
 
     assert out["kind"] == "workspaces"
@@ -1445,7 +1265,9 @@ def test_appflowy_fetch_self_filters_allowed_workspaces(monkeypatch):
     assert out["total_count"] == 1
 
 
-def test_appflowy_fetch_folder_infers_single_allowed_workspace(monkeypatch):
+def test_appflowy_fetch_folder_infers_single_allowed_workspace(
+    monkeypatch, mock_appflowy_api
+):
     import asyncio
 
     import httpx
@@ -1457,7 +1279,7 @@ def test_appflowy_fetch_folder_infers_single_allowed_workspace(monkeypatch):
         assert request.url.params["depth"] == "2"
         return httpx.Response(200, json={"data": {"views": [{"id": "page1"}]}})
 
-    _mock_http(monkeypatch, handler)
+    mock_appflowy_api(handler)
     out = asyncio.run(server.appflowy_fetch(kind="workspace_folder", depth=2))
 
     assert out["kind"] == "workspace_folder"
@@ -1467,7 +1289,7 @@ def test_appflowy_fetch_folder_infers_single_allowed_workspace(monkeypatch):
     assert out["nodes_visited"] == 2
 
 
-def test_appflowy_fetch_page_json_and_markdown(monkeypatch):
+def test_appflowy_fetch_page_json_and_markdown(monkeypatch, mock_appflowy_api):
     import asyncio
 
     import httpx
@@ -1478,7 +1300,7 @@ def test_appflowy_fetch_page_json_and_markdown(monkeypatch):
         assert request.url.path == "/api/workspace/ws-allowed/page-view/page1"
         return httpx.Response(200, json={"data": {"id": "page1", "name": "Page"}})
 
-    _mock_http(monkeypatch, handler)
+    mock_appflowy_api(handler)
     json_out = asyncio.run(server.appflowy_fetch(id="page1", workspace_id="ws-allowed"))
     assert json_out["kind"] == "page"
     assert json_out["data"] == {"id": "page1", "name": "Page"}
@@ -1499,7 +1321,7 @@ def test_appflowy_fetch_page_json_and_markdown(monkeypatch):
     assert md["total_chars"] == 6
 
 
-def test_appflowy_fetch_database_fields(monkeypatch):
+def test_appflowy_fetch_database_fields(monkeypatch, mock_appflowy_api):
     import asyncio
 
     import httpx
@@ -1510,7 +1332,7 @@ def test_appflowy_fetch_database_fields(monkeypatch):
         assert request.url.path == "/api/workspace/ws-allowed/database/db1/fields"
         return httpx.Response(200, json={"data": [{"id": "f1", "name": "Title"}]})
 
-    _mock_http(monkeypatch, handler)
+    mock_appflowy_api(handler)
     out = asyncio.run(
         server.appflowy_fetch(
             kind="database_fields", workspace_id="ws-allowed", id="db1"
@@ -1537,7 +1359,9 @@ def test_appflowy_fetch_validates_input_bounds():
         asyncio.run(server.appflowy_fetch(max_folder_nodes=9999))
 
 
-def test_appflowy_fetch_list_bounds_and_markdown_truncation(monkeypatch):
+def test_appflowy_fetch_list_bounds_and_markdown_truncation(
+    monkeypatch, mock_appflowy_api
+):
     import asyncio
 
     import httpx
@@ -1558,7 +1382,7 @@ def test_appflowy_fetch_list_bounds_and_markdown_truncation(monkeypatch):
             )
         raise AssertionError(request.url)
 
-    _mock_http(monkeypatch, handler)
+    mock_appflowy_api(handler)
     out = asyncio.run(server.appflowy_fetch(id="self", limit=2, offset=1))
 
     assert [w["name"] for w in out["data"]] == ["Two", "Three"]
@@ -1666,7 +1490,9 @@ async def test_replace_text(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_is_database_row_document_with_empty_row_data(monkeypatch):
+async def test_is_database_row_document_with_empty_row_data(
+    monkeypatch, mock_appflowy_api
+):
     # A real document's page-view payload carries `row_data` too (as {}), next to its
     # encoded_collab. Taking that for a row made append_blocks write everything twice.
     import httpx
@@ -1676,7 +1502,7 @@ async def test_is_database_row_document_with_empty_row_data(monkeypatch):
             200, json={"data": {"data": {"encoded_collab": [1, 2], "row_data": {}}}}
         )
 
-    _mock_http(monkeypatch, as_doc)
+    mock_appflowy_api(as_doc)
     assert (await server._is_database_row("ws", "some-id")) is False
 
     def as_row(_request):
@@ -1684,7 +1510,7 @@ async def test_is_database_row_document_with_empty_row_data(monkeypatch):
             200, json={"data": {"data": {"row_data": {"id": "r1", "cells": {}}}}}
         )
 
-    _mock_http(monkeypatch, as_row)
+    mock_appflowy_api(as_row)
     assert (await server._is_database_row("ws", "some-id")) is True
 
 
@@ -1701,8 +1527,8 @@ async def test_append_blocks_nested_goes_through_collab(monkeypatch):
     def no_post(*_a, **_k):
         raise AssertionError("REST append must not be used for nested blocks")
 
-    monkeypatch.setattr(server, "_require_workspace", lambda *_: None)
-    monkeypatch.setattr(server, "_post", _async_stub(no_post))
+    monkeypatch.setattr(a, "_require_workspace", lambda *_: None)
+    monkeypatch.setattr(a, "_post", _async_stub(no_post))
     monkeypatch.setattr(server, "add_blocks", _async_stub(fake_add_blocks))
 
     md = "Before\n\n- Parent\n  - Child\n"

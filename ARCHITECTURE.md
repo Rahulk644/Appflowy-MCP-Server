@@ -18,6 +18,7 @@ MCP transport → profile/tool registration → typed workflow → workspace gua
 | Location | Responsibility |
 |---|---|
 | `appflowy_mcp/cli.py` | Environment loading, serve/doctor commands, transport startup |
+| `appflowy_mcp/api.py` | Shared async HTTP session, AppFlowy login/refresh, workspace policy and API errors |
 | `appflowy_mcp/models.py` | Compact input schemas, bounds and permission objects |
 | `appflowy_mcp/workflows.py` | Compact orchestration, typed cells, pagination and batch results |
 | `appflowy_mcp/database_schema.py` | Read-only field dependency inspection and Formula property references |
@@ -31,8 +32,8 @@ MCP transport → profile/tool registration → typed workflow → workspace gua
 | `scripts/` | Build/install checks, manifest measurement, decoder checks and disposable stack runner |
 | `live_compatibility.py` | Operator harness for an explicitly configured deployment |
 
-API/session handling and legacy registration still share the backend module.
-Keep further extraction behavior-preserving; do not add speculative factories. The
+Legacy registration still shares the backend module. Keep further extraction
+behavior-preserving; do not add speculative factories. The
 compatibility entry points and async-name aliases have callers and remain intentional.
 
 ## Profiles and annotations
@@ -49,8 +50,10 @@ profile configuration.
 
 ## State and concurrency
 
-One reusable `httpx.AsyncClient` serves AppFlowy calls. An async lock serializes
-login/refresh. Both stdio and HTTP close the client on shutdown; HTTP also starts
+`api.py` owns one reusable `httpx.AsyncClient` and an async login/refresh lock.
+Backend and compact workflows use that owner directly. Compatibility helpers are
+function aliases; mutable token/client state is not mirrored into the server module.
+Both stdio and HTTP close the client on shutdown; HTTP also starts
 and stops the MCP session manager. The application targets one event loop per
 process. CPU work such as Markdown parsing and snapshot decoding remains local.
 
