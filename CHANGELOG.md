@@ -54,6 +54,12 @@ All notable changes are documented here. The format loosely follows
   no longer mis-typed.
 
 ### Added
+- PyPI publication is opt-in via `ENABLE_PYPI_PUBLISH`; GHCR releases are independent.
+- Installable Python package and `appflowy-mcp` command for stdio and Streamable
+  HTTP, with `--env-file`, `--help`, and `--version`. Wheels include the OAuth
+  provider and agent guide; existing source entry points remain supported.
+- Clean-install and Docker protocol checks, plus release-triggered PyPI Trusted
+  Publishing and multi-architecture GHCR workflows. See `RELEASING.md` for setup.
 - **Page mentions in Markdown.** `[label](mention:<view_id>)` inserts a live inline
   mention (link) to another page and round-trips through `get_page_markdown`. AppFlowy's
   editor has no person-mention type, so this covers page mentions.

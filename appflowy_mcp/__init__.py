@@ -1,0 +1,1 @@
+"""AppFlowy MCP server package."""

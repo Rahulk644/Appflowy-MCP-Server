@@ -14,7 +14,7 @@ This project uses `uv` for lightning-fast Python dependency management.
    ```
 3. **Run the server locally**:
    ```bash
-   uv run --with fastmcp --with httpx --with python-dotenv server.py
+   uv run appflowy-mcp
    ```
 
 ## ✅ Coding Standards
@@ -23,8 +23,9 @@ We enforce strict coding standards using `ruff`.
 
 Before submitting a Pull Request, please run:
 ```bash
-uv run --with ruff ruff format .
-uv run --with ruff ruff check .
+uv run --extra dev ruff format .
+uv run --extra dev ruff check .
+uv run --extra dev pytest -q
 ```
 
 ## 🚀 Pull Request Process
@@ -34,6 +35,10 @@ uv run --with ruff ruff check .
 3. If you've added code that should be tested, add tests.
 4. Update the README.md with details of changes to the interface, if applicable.
 5. Submit your Pull Request!
+
+Packaging, clean-install verification, and the release workflow are documented in
+[RELEASING.md](RELEASING.md). The implementation lives in `appflowy_mcp/`; root
+`server.py` and `google_oauth.py` preserve existing source imports and commands.
 
 ## 🐛 Reporting Bugs
 
