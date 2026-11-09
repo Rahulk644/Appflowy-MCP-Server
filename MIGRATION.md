@@ -72,3 +72,16 @@ rejects writes. A configured `APPFLOWY_ACCESS_TOKEN` takes precedence over
 email/password and must be replaced by the operator when it expires.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for validated versions and limits.
+
+## Upgrading from 2.0.0 to 2.0.1
+
+OAuth sessions whose email has been removed from `ALLOWED_EMAILS` are rejected.
+Tokens without a stored subject or the `appflowy` scope require a new sign-in.
+Google sign-in requires a verified email. Refreshes preserve the resource binding
+and honor requested scope narrowing. Shared-secret and stdio users keep their
+existing connection configuration.
+
+Mutation tool hints no longer promise safe automatic retries. Retain batch result
+IDs and inspect partial failures before repeating a create/import/append.
+Loopback HTTP defaults support custom ports. The deployment helper refuses to
+overwrite `.env`; edit an existing configuration directly when redeploying.
