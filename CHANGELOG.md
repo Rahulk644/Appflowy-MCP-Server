@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Attach gated wheel/source artifacts to GitHub Releases, verify identical assets
+  on retry and refuse replacements. Reuse matching versioned images and recover
+  only the latest stable alias without rebuilding immutable tags.
 - Use one declared package version for builds, CLI, doctor and MCP, and generate
   registry metadata from it. Keep dependencies in pyproject and validate release
   tags/image versions in CI, including older-tag registry recovery.

@@ -46,15 +46,21 @@ Do not use production data to validate a release.
 3. Publish a GitHub Release tagged `v<__version__>` at the verified commit.
    Never move an existing release tag or replace an existing versioned image.
 4. Monitor the release workflow. It reruns package and compatibility gates,
-   verifies version metadata, and pushes Linux amd64/arm64 images to GHCR.
-   Stable releases receive version and `latest` tags; prereleases do not move
-   `latest`. The PyPI job must remain skipped while publication is deferred.
+   attaches the gated wheel/source artifacts, and pushes Linux amd64/arm64 images
+   to GHCR. Only GitHub's latest stable release moves the mutable `latest` alias;
+   older releases and prereleases do not move it. The PyPI job must remain skipped.
 5. Confirm an anonymous image pull, then verify successful registry publication.
    Update installation examples only after artifacts actually exist.
 
-Pull requests and ordinary `main` pushes do not publish packages. Wheel/source
-builds are retained as CI artifacts; automatic attachment to GitHub Releases is
-an open item in [ROADMAP.md](ROADMAP.md).
+Pull requests and ordinary `main` pushes do not publish packages. Release assets
+come from the verified Linux Python 3.12 build, without rebuilding for upload.
+Retries skip byte-identical assets and refuse different contents at the same name.
+An existing versioned image must match the release commit; retries reuse it and
+can recover the mutable latest alias. Network/auth failures stop publication.
+
+Rerun only failed jobs for a transient failure. Rebuilding a complete release can
+produce distributions with different build timestamps; differing published assets
+are deliberately rejected and must be shipped under a new version instead.
 
 ## MCP Registry and GHCR
 
