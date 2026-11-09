@@ -4,6 +4,8 @@
 
 - Upgrade workflow actions to verified release commits using Node 24, verify
   distribution upload/download on Linux and Windows, and enable weekly action updates.
+- Wait through the disposable stack's explicit temporary search-unavailable state
+  before asserting an indexed hit; keep unexpected errors and exhausted waits failing.
 - Attach gated wheel/source artifacts to GitHub Releases, verify identical assets
   on retry and refuse replacements. Reuse matching versioned images and recover
   only the latest stable alias without rebuilding immutable tags.
