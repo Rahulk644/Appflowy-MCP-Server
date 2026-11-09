@@ -1,21 +1,5 @@
 # Contributing
 
-Keep tests with their module: API/session checks in `tests/test_api.py`, local
-document conversion in `tests/test_documents.py`, and collaboration helpers in
-`tests/test_collab.py`. Patch HTTP/client state in `appflowy_mcp.api`; the server's
-compatibility function aliases are not a second session store. Use the shared
-`mock_appflowy_api` fixture for HTTP-level backend tests.
-
-Declare runtime and development dependencies in `pyproject.toml`. The source
-`requirements.txt` delegates to that project; it is not a separate dependency list.
-Run `python scripts/release_metadata.py` when validating a candidate, and see
-[RELEASING.md](RELEASING.md) before changing version metadata.
-
-Workflow actions are pinned to reviewed release commits. Dependabot proposes
-weekly updates, grouping minor/patch maintenance while leaving major upgrades
-separate. Review action release notes and require Linux/Windows, container and
-disposable compatibility checks before merging a workflow upgrade.
-
 ## Development setup
 
 Python 3.11+ is required. From a fork or checkout:
@@ -36,6 +20,24 @@ appflowy-mcp
 
 Offline tests use dummy configuration and require no AppFlowy account. Selected
 files run independently; shared defaults are in `tests/conftest.py`.
+
+## Project organization
+
+Keep tests with their module: API/session checks in `tests/test_api.py`, local
+document conversion in `tests/test_documents.py`, and collaboration helpers in
+`tests/test_collab.py`. Patch HTTP/client state in `appflowy_mcp.api`; the server's
+compatibility function aliases are not a second session store. Use the shared
+`mock_appflowy_api` fixture for HTTP-level backend tests.
+
+Declare runtime and development dependencies in `pyproject.toml`. The source
+`requirements.txt` delegates to that project; it is not a separate dependency list.
+Run `python scripts/release_metadata.py` when validating a candidate, and see
+[RELEASING.md](RELEASING.md) before changing version metadata.
+
+Workflow actions are pinned to reviewed release commits. Dependabot proposes
+weekly updates, grouping minor/patch maintenance while leaving major upgrades
+separate. Review action release notes and require Linux/Windows, container and
+disposable compatibility checks before merging a workflow upgrade.
 
 ## Checks
 
