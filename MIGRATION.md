@@ -8,6 +8,9 @@ The default profile changes to 11 prefixed async tools. Enable experimental AI
 with `APPFLOWY_ENABLE_AI=true` for the twelfth. Every compact call uses a typed
 `request` object. Unknown arguments are rejected. Cell values and settings are
 JSON objects, rather than JSON encoded inside strings.
+Compact commands reject non-default fields that do not apply to the selected
+operation. Remove fields named in the validation error or use the relevant command.
+For example, edit a row body with document/block commands rather than `update_cells`.
 
 For existing MCP clients, set `APPFLOWY_TOOL_PROFILE=legacy` to retain the original
 34 tool names and schemas. All 34 implementations now use async network I/O.

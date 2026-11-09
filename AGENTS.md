@@ -28,6 +28,8 @@ current project; temporary progress and conversation summaries do not belong her
   not SaaS certification. Do not commit credentials or raw private response bodies.
 - DateTime cells store the timestamp in `data` and range/time attributes beside it;
   JSON serialized into `data` can persist successfully while rendering an empty date.
+- Keep compact command validators aligned with consumed inputs. Reject meaningful
+  unused fields before mutation; optional defaults may be supplied by MCP clients.
 
 ## Validation
 

@@ -10,6 +10,28 @@ Identifier = Annotated[
 Markdown = Annotated[str, Field(max_length=100_000)]
 
 
+def _only_fields(model: BaseModel, operation: str, allowed: str) -> None:
+    """Reject meaningful inputs an operation would ignore, keeping compact schemas.
+
+    Clients may materialize optional defaults, so explicitly supplied defaults are
+    harmless. A non-default value must be consumed by the selected operation.
+    """
+    fields = type(model).model_fields
+    ignored = sorted(
+        name
+        for name in model.model_fields_set - set(allowed.split())
+        if getattr(model, name) != fields[name].get_default(call_default_factory=True)
+    )
+    if ignored:
+        raise ValueError(f"{operation} does not accept: {', '.join(ignored)}")
+
+
+def _command_fields(model: BaseModel, commands: dict[str, str]) -> None:
+    _only_fields(
+        model, model.command, "workspace_id command " + commands[model.command]
+    )
+
+
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
     workspace_id: str = ""
@@ -32,6 +54,39 @@ class FetchInput(ReadInput):
     ] = "auto"
     database_id: str = ""
     depth: int = Field(default=1, ge=0, le=5)
+
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        kind = self.kind
+        if kind == "auto":
+            kind = (
+                "self"
+                if self.id == "self"
+                else "database_fields"
+                if self.database_id
+                else "page"
+            )
+        _only_fields(
+            self,
+            kind,
+            "kind "
+            + {
+                "self": "limit offset",
+                "workspaces": "limit offset",
+                "workspace_folder": "workspace_id depth",
+                "database_fields": "workspace_id id database_id limit offset",
+                "page": "workspace_id id response_format",
+            }[kind],
+        )
+        if (
+            kind == "database_fields"
+            and self.database_id
+            and self.id not in {"self", self.database_id}
+        ):
+            raise ValueError(
+                "id and database_id identify different databases; provide one ID"
+            )
+        return self
 
 
 class SpaceSecurity(BaseModel):
@@ -83,6 +138,21 @@ class PageSpec(BaseModel):
     markdown: Markdown = ""
     permission: SpacePermission | None = None
 
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _only_fields(
+            self,
+            self.kind,
+            "kind name "
+            + {
+                "document": "parent_view_id markdown",
+                "space": "permission",
+                "database": "parent_view_id layout",
+                "database_view": "parent_view_id layout",
+            }[self.kind],
+        )
+        return self
+
 
 class CreateInput(Input):
     pages: list[PageSpec] = Field(min_length=1, max_length=20)
@@ -107,12 +177,45 @@ class UpdateInput(Input):
     permission: SpacePermission | None = None
     expected_markdown: Markdown | None = None
 
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _command_fields(
+            self,
+            {
+                "rename": "id name",
+                "move": "id parent_view_id",
+                "duplicate": "id name",
+                "trash": "id",
+                "restore": "id",
+                "append": "id markdown",
+                "prepend": "id markdown expected_markdown",
+                "replace": "id markdown expected_markdown",
+                "space_permissions": "id permission",
+            },
+        )
+        return self
+
 
 class DeleteInput(Input):
     kind: Literal["page", "row", "block", "field"]
     id: Identifier
     database_id: str = ""
     page_id: str = ""
+
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _only_fields(
+            self,
+            self.kind,
+            "workspace_id kind id "
+            + {
+                "page": "",
+                "row": "database_id",
+                "field": "database_id",
+                "block": "page_id",
+            }[self.kind],
+        )
+        return self
 
 
 class DatabaseInput(ReadInput):
@@ -139,6 +242,27 @@ class DatabaseInput(ReadInput):
     expression: str = Field(default="", max_length=10_000)
     settings: dict[str, Any] = Field(default_factory=dict, max_length=20)
 
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _command_fields(
+            self,
+            {
+                "list": "limit offset response_format",
+                "fields": "database_id limit offset response_format",
+                "add_field": "database_id name field_type settings",
+                "update_field": "database_id field_id name settings",
+                "delete_field": "database_id field_id",
+                "add_option": "database_id field_id name",
+                "delete_option": "database_id field_id option_id",
+                "group_by": "database_id field_id view_id",
+                "formula": "database_id field_id expression",
+                "timeline": "database_id view_id settings",
+                "view_settings": "database_id view_id",
+                "space_permissions": "view_id",
+            },
+        )
+        return self
+
 
 class RowSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -158,6 +282,21 @@ class RowsInput(ReadInput):
     with_doc: bool = False
     after: str = Field(default="", max_length=200)
 
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _row_fields(self)
+        for row in self.rows:
+            _only_fields(
+                row,
+                self.command,
+                {
+                    "create": "cells document",
+                    "upsert": "cells document pre_hash",
+                    "update_cells": "row_id cells",
+                }.get(self.command, ""),
+            )
+        return self
+
 
 class BlocksInput(Input):
     command: Literal["add", "edit", "delete", "replace_text"]
@@ -171,6 +310,20 @@ class BlocksInput(Input):
     replace_all: bool = False
     block_type: str = Field(default="", max_length=80, pattern=r"^[A-Za-z0-9_]*$")
     data: dict[str, Any] = Field(default_factory=dict, max_length=20)
+
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _command_fields(
+            self,
+            {
+                "add": "page_id parent_id "
+                + ("block_type text data" if self.block_type else "markdown"),
+                "edit": "page_id block_id text",
+                "delete": "page_id block_id",
+                "replace_text": "page_id find replace replace_all",
+            },
+        )
+        return self
 
 
 class Entry(BaseModel):
@@ -215,6 +368,20 @@ class AIInput(ReadInput):
     page_ids: list[Identifier] = Field(default_factory=list, max_length=50)
     full_workspace: bool = False
 
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _command_fields(
+            self,
+            {
+                "create_chat": "parent_view_id name",
+                "ask": "chat_id question page_ids full_workspace",
+                "messages": "chat_id limit offset",
+                "delete_chat": "chat_id",
+                "set_context": "chat_id page_ids full_workspace",
+            },
+        )
+        return self
+
 
 class APIInput(Input):
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"] = "GET"
@@ -228,6 +395,19 @@ class ReadDatabaseInput(ReadInput):
     database_id: str = ""
     view_id: str = ""
 
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _command_fields(
+            self,
+            {
+                "list": "limit offset response_format",
+                "fields": "database_id limit offset response_format",
+                "view_settings": "database_id view_id",
+                "space_permissions": "view_id",
+            },
+        )
+        return self
+
 
 class ReadRowsInput(ReadInput):
     command: Literal["list", "get", "changed_since"]
@@ -235,6 +415,26 @@ class ReadRowsInput(ReadInput):
     row_ids: list[Identifier] = Field(default_factory=list, max_length=100)
     with_doc: bool = False
     after: str = Field(default="", max_length=200)
+
+    @model_validator(mode="after")
+    def applicable_fields(self):
+        _row_fields(self)
+        return self
+
+
+def _row_fields(model: BaseModel) -> None:
+    _command_fields(
+        model,
+        {
+            "list": "database_id limit offset response_format with_doc",
+            "get": "database_id row_ids limit offset response_format with_doc",
+            "changed_since": "database_id after limit offset response_format",
+            "create": "database_id rows",
+            "upsert": "database_id rows",
+            "update_cells": "database_id rows",
+            "delete": "database_id row_ids",
+        },
+    )
 
 
 ImportInput.model_rebuild()
