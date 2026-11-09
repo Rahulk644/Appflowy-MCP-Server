@@ -69,8 +69,16 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             monkeypatch.setattr(a, key, value)
         await a._login_async()
         assert a._access_token and a._refresh_token
-        await a._refresh_async()
-        assert any(item["workspace_id"] == ws for item in await b.get_workspaces())
+
+        async def reject_password_fallback():
+            pytest.fail("The refresh grant must succeed without password re-login")
+
+        # A successful password fallback must not masquerade as refresh evidence.
+        with monkeypatch.context() as refresh_check:
+            refresh_check.setattr(a, "_login_async", reject_password_fallback)
+            await a._refresh_async()
+            assert a._access_token and a._refresh_token
+            assert any(item["workspace_id"] == ws for item in await b.get_workspaces())
         passed("password_login_and_token_refresh")
         folder = await b.get_workspace_folder(ws, 2)
         parent = next(
