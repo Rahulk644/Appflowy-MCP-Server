@@ -136,6 +136,24 @@ This binds to `127.0.0.1:8000`; use `--host` / `--port` to change it. The MCP
 endpoint remains `/mcp/`, with legacy SSE at `/sse/`.
 
 ### Docker / VPS — for remote & unattended agents
+
+Use the published multi-platform image (Linux amd64/arm64):
+
+```bash
+docker run --rm --env-file .env -p 127.0.0.1:8000:8000 \
+  ghcr.io/rahulk644/appflowy-mcp-server:2.0.0
+```
+
+For local stdio clients:
+
+```bash
+docker run --rm -i --env-file .env \
+  ghcr.io/rahulk644/appflowy-mcp-server:2.0.0 appflowy-mcp
+```
+
+The image is also listed in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Rahulk644%2Fappflowy-mcp-server/versions/2.0.0).
+PyPI publication is deferred. For a source-built Compose deployment:
+
 ```bash
 cp .env.example .env      # fill in credentials + MCP_SECRET_TOKEN (and OAuth, optional)
 docker compose up -d --build
@@ -149,8 +167,7 @@ docker run --rm -i --env-file .env appflowy-mcp appflowy-mcp
 ```
 
 Build the local image first with `docker build -t appflowy-mcp .`.
-PyPI and prebuilt GHCR installation instructions are in [RELEASING.md](RELEASING.md);
-they become usable after the first release has been published.
+Release and publisher details are in [RELEASING.md](RELEASING.md).
 
 ## ⚙️ Configuration (`.env`)
 
