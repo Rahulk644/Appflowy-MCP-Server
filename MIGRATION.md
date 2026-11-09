@@ -11,6 +11,8 @@ JSON objects, rather than JSON encoded inside strings.
 Compact commands reject non-default fields that do not apply to the selected
 operation. Remove fields named in the validation error or use the relevant command.
 For example, edit a row body with document/block commands rather than `update_cells`.
+Field deletion now names local schema/view dependencies that must be reconfigured
+first. Relation fields must be deleted in AppFlowy to update reciprocal links.
 
 For existing MCP clients, set `APPFLOWY_TOOL_PROFILE=legacy` to retain the original
 34 tool names and schemas. All 34 implementations now use async network I/O.

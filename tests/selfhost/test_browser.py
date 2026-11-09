@@ -145,6 +145,8 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
             board.get("view_id", board.get("id")) if isinstance(board, dict) else board
         )
         await b.set_group_by(ws, db, board_id, select)
+        with pytest.raises(ValueError, match="dependencies.*groups"):
+            await b.delete_database_field(ws, db, select)
         timeline = await b.create_database_view(
             ws, database["view_id"], "timeline", "MCP Timeline"
         )

@@ -260,6 +260,24 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             current["views"][timeline_id]["layout_settings"]["8"]["field_id"] == date_id
         )
         passed("timeline_settings_persistence")
+        with pytest.raises(ValueError, match="dependencies.*layout_settings"):
+            await b.delete_database_field(ws, db, date_id)
+        _, current = await b._open_database(ws, db)
+        assert date_id in current["fields"]
+        passed("field_deletion_rejects_timeline_dependency")
+        spare = await b.add_database_field(ws, db, "MCP spare field", 0)
+        spare_id = (
+            spare.get("field_id", spare.get("id")) if isinstance(spare, dict) else spare
+        )
+        await b.delete_database_field(ws, db, spare_id)
+        _, current = await b._open_database(ws, db)
+        assert spare_id not in current["fields"]
+        assert all(
+            order["id"] != spare_id
+            for view in current["views"].values()
+            for order in view["field_orders"]
+        )
+        passed("unreferenced_field_delete_persistence")
         result = await w.appflowy_rows(
             m.RowsInput(
                 workspace_id=ws, database_id=db, command="delete", row_ids=[row_id]

@@ -20,6 +20,7 @@ MCP transport → profile/tool registration → typed workflow → workspace gua
 | `appflowy_mcp/cli.py` | Environment loading, serve/doctor commands, transport startup |
 | `appflowy_mcp/models.py` | Compact input schemas, bounds and permission objects |
 | `appflowy_mcp/workflows.py` | Compact orchestration, typed cells, pagination and batch results |
+| `appflowy_mcp/database_schema.py` | Read-only field dependency inspection and Formula property references |
 | `appflowy_mcp/server.py` | Shared async backend, Markdown/CRDT conversion, legacy tools, MCP/HTTP lifecycle |
 | `appflowy_mcp/google_oauth.py` | Google identity federation and token/client persistence |
 | `appflowy_mcp/diagnostics.py` | Offline checks and optional sanitized connection diagnostics |
@@ -74,6 +75,10 @@ Typed row writes resolve field names/IDs and options before creating rows. Cell
 writes verify authoritative readback; batch partial failures retain row IDs so
 clients can finish edits without creating duplicates. Page deletion means trash;
 row/block/field deletion changes collaboration structures.
+Field deletion rejects active references in the fetched database's views and schema,
+including nested filters and Formula property calls. It removes only field order and
+direct field/form settings. Relation deletion is delegated to AppFlowy for reciprocal
+cleanup. These checks do not scan other databases for incoming references.
 
 Markdown replacement requires the expected fetched content. This protects against
 an already-stale read but cannot prevent edits arriving after that snapshot.

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refuse field deletion while local filters, sorts, groups, formulas, calculations
+  or view layouts reference it. Keep rejection read-only, clean direct form-field
+  settings on successful deletion, and delegate Relation deletion to AppFlowy.
 - Reject command-specific fields that would otherwise be ignored, including row
   document text on cell-only updates, Markdown on database creation, conflicting
   block representations and mismatched fetch IDs. Validate whole batches before writes.
