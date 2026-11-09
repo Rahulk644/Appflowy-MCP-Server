@@ -1,49 +1,60 @@
-# Contributing to AppFlowy MCP Server
+# Contributing
 
-First off, thank you for considering contributing to the AppFlowy MCP Server! It's people like you that make open source such a great community.
+## Development setup
 
-## 💻 Development Setup
+Python 3.11+ is required. From a fork or checkout:
 
-This project uses `uv` for lightning-fast Python dependency management.
-
-1. **Install uv**: If you haven't already, install [uv](https://github.com/astral-sh/uv).
-2. **Clone the repo**:
-   ```bash
-   git clone https://github.com/Rahulk644/appflowy-mcp-server.git
-   cd appflowy-mcp-server
-   ```
-3. **Run the server locally**:
-   ```bash
-   uv run appflowy-mcp
-   ```
-
-## ✅ Coding Standards
-
-We enforce strict coding standards using `ruff`.
-
-Before submitting a Pull Request, please run:
 ```bash
-uv run --extra dev ruff format .
-uv run --extra dev ruff check .
-uv run --extra dev pytest -q
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'
 ```
 
-## 🚀 Pull Request Process
+On Windows, activate with `.venv\Scripts\Activate.ps1`. Copy `.env.example` only
+when no `.env` exists, then configure a dedicated bot account. For source testing:
 
-1. Fork the repository and create your branch from `main`.
-2. Make your changes and ensure the code is properly formatted.
-3. If you've added code that should be tested, add tests.
-4. Update the README.md with details of changes to the interface, if applicable.
-5. Submit your Pull Request!
+```bash
+appflowy-mcp doctor --check --env-file /absolute/path/to/.env
+appflowy-mcp
+```
 
-Packaging, clean-install verification, and the release workflow are documented in
-[RELEASING.md](RELEASING.md). The implementation lives in `appflowy_mcp/`; root
-`server.py` and `google_oauth.py` preserve existing source imports and commands.
+Offline tests use dummy configuration and require no AppFlowy account. Selected
+files run independently; shared defaults are in `tests/conftest.py`.
 
-## 🐛 Reporting Bugs
+## Checks
 
-Bugs are tracked as GitHub issues. When creating an issue, please use the provided Bug Report template and provide as much detail as possible, including your OS, Python version, and a clear description of the problem.
+```bash
+ruff check .
+ruff format --check .
+python -m pytest -q
+```
 
-## 💡 Proposing Features
+Use `ruff format .` to apply formatting. Add regressions for changed behavior;
+avoid tests that merely repeat implementation details. For packaging, transport
+or dependency changes, follow [RELEASING.md](RELEASING.md). Backend/CRDT changes
+also need the disposable [compatibility suite](COMPATIBILITY.md). Keep test data
+isolated from production and remove disposable services with the runner's `down`.
 
-Feature requests are welcome! Please use the Feature Request template when creating an issue.
+## Code and documentation
+
+- Keep network work async and reuse the AppFlowy client/session lifecycle.
+- Enforce workspace policy below routing; behavior hints are not permissions.
+- Preserve incremental collaboration updates and explicit partial failures.
+- Keep the default manifest compact; preserve documented legacy entry points.
+- Prefer small domain functions over new generic factories or speculative layers.
+- Update the relevant user, architecture and compatibility docs with behavior
+  changes. Current docs must stand alone without the PR conversation.
+- Maintain open work in [ROADMAP.md](ROADMAP.md) and release changes in
+  [CHANGELOG.md](CHANGELOG.md). [AGENTS.md](AGENTS.md) holds durable project context.
+
+## Pull requests and issues
+
+Start from `main` and describe the concrete problem, resulting behavior, relevant
+checks and remaining limits. Keep unrelated refactors separate. Explain any
+compatibility change, especially profile schemas or OAuth session behavior.
+
+For bug reports, include server release, Python/runtime, deployment type, AppFlowy
+backend/Web versions, expected behavior and a minimal reproduction. Redact tokens,
+passwords, emails and private workspace content. Feature requests should describe
+the user task and acceptance criteria. Report vulnerabilities privately through
+[SECURITY.md](SECURITY.md).

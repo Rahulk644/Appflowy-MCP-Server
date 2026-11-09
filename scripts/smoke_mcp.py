@@ -24,7 +24,6 @@ def fixture_environment() -> dict[str, str]:
     return {
         "APPFLOWY_BASE_URL": "http://127.0.0.1:1",
         "MCP_SECRET_TOKEN": "packaging-smoke-token",
-        "MCP_ALLOWED_HOSTS": "127.0.0.1:*",
         "ALLOWED_WORKSPACE_IDS": "packaging-smoke-workspace",
         # Enable the optional provider to prove that its module is bundled too.
         "GOOGLE_CLIENT_ID": "packaging-smoke-client",

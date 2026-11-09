@@ -1,19 +1,15 @@
-## Description
-Please include a summary of the change and which issue is fixed. Please also include relevant motivation and context.
+## Change
 
-Fixes # (issue)
+Describe the concrete problem and resulting behavior. Link an issue if applicable.
 
-## Type of change
-Please delete options that are not relevant.
+## Validation
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
+List relevant checks and results, including any untested paths or compatibility
+limits. Backend/collab changes should include disposable persistence evidence.
 
-## Checklist:
-- [ ] My code follows the style guidelines of this project (`ruff check .` passes)
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
+## Review
+
+- [ ] Code and formatting checks pass.
+- [ ] Regressions cover changed behavior where needed.
+- [ ] Affected user/maintainer docs and changelog are current.
+- [ ] No credentials, private content or generated scratch files are included.

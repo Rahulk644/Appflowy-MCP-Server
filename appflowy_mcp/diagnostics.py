@@ -25,6 +25,8 @@ async def diagnose(check_connection: bool = False) -> dict:
             and not url.password
             and not url.query
             and not url.fragment
+            and url.path in {"", "/"}
+            and (url.port is None or 1 <= url.port <= 65535)
         )
     except ValueError:
         valid_url = False
@@ -59,12 +61,20 @@ async def diagnose(check_connection: bool = False) -> dict:
             "agent_guide",
             (Path(__file__).resolve().parent.parent / "KNOWLEDGE.md").is_file(),
         )
-    if check_connection and credentials and valid_url:
+    connection_checked = False
+    if check_connection and all(item["ok"] for item in checks):
+        connection_checked = True
         from . import server
 
         try:
             workspaces = await server.get_workspaces()
-            add("workspace_access", True, f"{len(workspaces)} permitted workspace(s)")
+            add(
+                "workspace_access",
+                bool(workspaces),
+                f"{len(workspaces)} permitted workspace(s)"
+                if workspaces
+                else "No permitted workspaces; check membership and ALLOWED_WORKSPACE_IDS",
+            )
         except (ValueError, RuntimeError) as exc:
             add(
                 "workspace_access",
@@ -80,7 +90,7 @@ async def diagnose(check_connection: bool = False) -> dict:
     return {
         "ok": all(item["ok"] for item in checks),
         "version": package_version,
-        "connection_checked": check_connection and credentials and valid_url,
+        "connection_checked": connection_checked,
         "checks": checks,
     }
 

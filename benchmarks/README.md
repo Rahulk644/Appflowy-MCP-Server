@@ -12,5 +12,5 @@ size. Profiles are exclusive: legacy names are never loaded beside compact names
 These are byte measurements, not token counts or measured LLM tool-selection
 accuracy. Client lazy loading, tokenizer choice and prompt caching affect actual
 cost and latency. Workflow task completion is tested separately through MCP
-contract tests and the disposable live integration suite. `evaluation.xml` supplies
+contract tests and the disposable live integration suite. [tests/evaluation.xml](../tests/evaluation.xml) supplies
 10 read-only agent evaluation cases with independently verifiable expected results.

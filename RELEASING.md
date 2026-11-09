@@ -1,97 +1,75 @@
 # Packaging and releases
 
-The distribution is `appflowy-mcp-server`; its executable is `appflowy-mcp`.
-The package includes the server, Google OAuth provider, and `appflowy://guide`.
-MCP 2.3+ uses `MCPServer`; pycrdt remains pinned to 0.13.0. Python 3.11+ is required.
+The Python distribution is `appflowy-mcp-server`; the command is `appflowy-mcp`.
+Wheels include the implementation, OAuth provider and `appflowy://guide`.
+Supported releases are available from GitHub source and public GHCR images.
+**PyPI publishing is explicitly deferred and unconditionally disabled.**
 
-## Build and verify locally
+## Verify a candidate
+
+Use Python 3.11+ and the development dependencies:
 
 ```bash
-pip install -e '.[dev]'
+python -m pip install -e '.[dev]'
 ruff check .
 ruff format --check .
-pytest -q
+python -m pytest -q
 python -m build
 python -m twine check dist/*
 python scripts/check_package.py
+```
+
+Start with an empty `dist/` so older distributions cannot be uploaded accidentally.
+`check_package.py` expects one wheel, installs it into a clean environment outside
+the checkout, and checks the CLI, stdio/HTTP protocol, guide, OAuth discovery and
+HTTP authentication using dummy configuration. It requires no AppFlowy account.
+
+```bash
 docker build -t appflowy-mcp .
 python scripts/smoke_mcp.py --docker-image appflowy-mcp
 python scripts/smoke_mcp.py --docker-image appflowy-mcp --transport streamable-http
 ```
 
-Remove older files from `dist/` before building another version. The installation
-check expects one wheel, creates a temporary virtual environment, installs that
-wheel, and runs outside the checkout. It checks the module/executable, stdio and
-HTTP initialization, tool discovery, guide loading, OAuth discovery, and HTTP
-authentication. No AppFlowy credentials are required; it enables OAuth with dummy
-settings to check that the optional provider is packaged.
+Backend/CRDT changes also require [disposable compatibility checks](COMPATIBILITY.md).
+Do not use production data to validate a release.
 
-## One-time publisher setup
+## Publish
 
-PyPI publication is deferred and unconditionally disabled for 2.0. Container
-releases work independently. A future authorized PyPI release must remove the
-explicit `false` guard in `release.yml` and set `ENABLE_PYPI_PUBLISH=true` after
-completing the publisher setup below. A repository setting alone cannot publish 2.0.
+1. Update `project.version` in `pyproject.toml`, the runtime MCP version, and both
+   version references in `server.json`. Keep dependencies in `requirements.txt`
+   consistent with the project metadata.
+2. Finalize `CHANGELOG.md`, migration notes and relevant compatibility evidence.
+   Merge the candidate after required checks pass.
+3. Publish a GitHub Release tagged `v<project.version>` at the verified commit.
+   Never move an existing release tag or replace an existing versioned image.
+4. Monitor the release workflow. It reruns package and compatibility gates,
+   verifies version metadata, and pushes Linux amd64/arm64 images to GHCR.
+   Stable releases receive version and `latest` tags; prereleases do not move
+   `latest`. The PyPI job must remain skipped while publication is deferred.
+5. Confirm an anonymous image pull, then verify successful registry publication.
+   Update installation examples only after artifacts actually exist.
 
-1. Create a GitHub Actions environment named `pypi` in this repository. Set any
-   desired release reviewers on that environment.
-2. In PyPI's **Publishing** settings, add a pending Trusted Publisher:
-   project `appflowy-mcp-server`, owner `Rahulk644`, repository
-   `Appflowy-MCP-Server`, workflow `release.yml`, environment `pypi`.
-   The workflow uses OIDC; no PyPI API token belongs in repository secrets.
-3. Ensure GitHub Actions may publish to GitHub Container Registry. Its workflow
-   uses the repository's `GITHUB_TOKEN` with `packages: write`.
-4. After the first GHCR publication, set the package's visibility to **Public**
-   so users can pull it without signing in. Check anonymous installation and pulls
-   before adding release installation commands to the README quick start.
+Pull requests and ordinary `main` pushes do not publish packages. Wheel/source
+builds are retained as CI artifacts; automatic attachment to GitHub Releases is
+an open item in [ROADMAP.md](ROADMAP.md).
 
-## Publish a release
+## MCP Registry and GHCR
 
-1. Update `project.version`, the runtime server version, and both versions in `server.json`; finalize the changelog.
-2. Merge the reviewed change and wait for CI to pass.
-3. Publish a GitHub Release tagged `v<project.version>`, such as `v2.0.0`.
+The identity is `io.github.Rahulk644/appflowy-mcp-server`. `server.json` describes
+an OCI stdio package, and the Dockerfile embeds its matching ownership label.
+The workflow verifies the pinned publisher's Sigstore bundle, authenticates using
+GitHub OIDC, and publishes the metadata after the image succeeds.
 
-Publishing the GitHub Release triggers `.github/workflows/release.yml`. It reruns
-CI for the release, verifies that the tag matches the package version, and publishes
-the checked Python distribution to PyPI (only when explicitly enabled) and a
-Linux amd64/arm64 image to GHCR.
-Stable container releases receive version and `latest` tags. These two registries
-publish independently; inspect both jobs, and rerun only a failed job if one succeeds.
-An existing PyPI version cannot be overwritten.
+GHCR publishing uses the workflow's `GITHUB_TOKEN` with `packages: write`. Images
+must be public. If an initial package is private, change its package settings to
+Public, verify an anonymous pull, and rerun the failed registry job. Container and
+registry jobs are distinct; avoid rebuilding or overwriting an already-published
+version to repair a metadata-publication failure.
 
-No package or image is published by pull-request CI or an ordinary push to `main`.
+## Future PyPI setup
 
-## Installation after publication
-
-These commands require a successfully published release. Until then, use the
-GitHub-source command in the README or build Docker locally.
-
-PyPI commands are intentionally omitted until that distribution is published.
-The source installation works without PyPI:
-
-```bash
-uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.0 appflowy-mcp --env-file /absolute/path/to/.env
-```
-
-```bash
-docker run --rm --env-file .env -p 127.0.0.1:8000:8000 \
-  ghcr.io/rahulk644/appflowy-mcp-server:2.0.0
-```
-
-For stdio, use `-i` instead of publishing a port and append `appflowy-mcp` to
-override the image's HTTP command. Persist `OAUTH_STORE_PATH` on a volume for
-remote OAuth deployments, as in the existing Compose file.
-
-## Official MCP Registry
-
-`server.json` publishes an OCI package under
-`io.github.Rahulk644/appflowy-mcp-server`. Its ownership label is embedded in the
-Dockerfile. After the container job, the registry job verifies anonymous access,
-verifies the pinned publisher's Sigstore bundle, logs in with GitHub OIDC and
-publishes the metadata. A private initial GHCR package must be made Public in
-GitHub package settings before that job can succeed. Rerun only the failed
-registry job after fixing visibility. Registry publication is independent of PyPI.
-
-The release gate also runs the pinned commercial self-hosted lifecycle/browser
-suite and required supported-decoder fixture check. Candidate decoders are
-informational. Cloud/AI validation is documented separately in COMPATIBILITY.md.
+Enable PyPI only after explicit maintainer authorization: remove the unconditional
+`false` guard in `release.yml` and set `ENABLE_PYPI_PUBLISH=true`. Configure the
+`pypi` GitHub environment and a PyPI Trusted Publisher for project
+`appflowy-mcp-server`, owner `Rahulk644`, repository `Appflowy-MCP-Server`, workflow
+`release.yml`, environment `pypi`. Use OIDC; do not add a PyPI API token to the repo.
