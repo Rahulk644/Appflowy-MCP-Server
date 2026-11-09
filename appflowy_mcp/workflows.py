@@ -16,6 +16,7 @@ from pycrdt import Map
 from . import api as a
 from . import documents as d
 from . import models as m
+from .profiles import DESTRUCTIVE, READ
 
 MAX_RESULT_CHARS = 50_000
 
@@ -983,7 +984,6 @@ async def _read_rows(request: m.ReadRowsInput) -> dict:
 
 
 def register(server):
-    b = backend()
     read = {"appflowy_search", "appflowy_fetch", "appflowy_export"}
     for function in (
         appflowy_search,
@@ -1002,12 +1002,12 @@ def register(server):
         name = function.__name__
         if name == "appflowy_ai" and not ai_enabled():
             continue
-        if b._read_only() and function.__name__ not in read | {
+        if a._read_only() and function.__name__ not in read | {
             "appflowy_database",
             "appflowy_rows",
         }:
             continue
-        if b._read_only():
+        if a._read_only():
             function = {
                 "appflowy_database": _read_database,
                 "appflowy_rows": _read_rows,
@@ -1017,7 +1017,7 @@ def register(server):
         server.tool(
             name=name,
             title=name.removeprefix("appflowy_").replace("_", " ").title(),
-            annotations=b._READ
-            if name in read or b._read_only()
-            else {**b._DESTRUCTIVE, "idempotentHint": False},
+            annotations=READ
+            if name in read or a._read_only()
+            else {**DESTRUCTIVE, "idempotentHint": False},
         )(function)
