@@ -445,7 +445,7 @@ async def test_read_only_manifest_omits_mutation_commands(monkeypatch):
 async def test_doctor_never_prints_credentials(monkeypatch, installed):
     from importlib.metadata import PackageNotFoundError
 
-    from appflowy_mcp import diagnostics
+    from appflowy_mcp import __version__, diagnostics
     from appflowy_mcp.diagnostics import diagnose
 
     if not installed:
@@ -464,8 +464,7 @@ async def test_doctor_never_prints_credentials(monkeypatch, installed):
     assert "never-print-this-password" not in text
     assert "fixture@example.com" not in text
     assert result["connection_checked"] is False
-    if not installed:
-        assert result["version"] == "development"
+    assert result["version"] == __version__
     assert any(
         item["name"] == "credentials_present" and item["ok"]
         for item in result["checks"]

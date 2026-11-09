@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "appflowy-mcp-server"
-version = "2.0.1"
+dynamic = ["version"]
 description = "Model Context Protocol (MCP) server for AppFlowy Cloud — read, build, and edit your workspace from AI agents."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,7 +17,6 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    # Keep these bounds in sync with requirements.txt.
     "mcp>=2.3,<3",
     "httpx",
     "httpx2>=2.10,<3",
@@ -25,6 +24,7 @@ dependencies = [
     "python-dotenv",
     "fastapi",
     "uvicorn",
+    # Fresh fixtures do not reproduce the historical regression; see COMPATIBILITY.md.
     "pycrdt==0.13.0",
     "markdown-it-py",
     "mdit-py-plugins",
@@ -41,6 +41,9 @@ appflowy-mcp = "appflowy_mcp.cli:main"
 Homepage = "https://github.com/Rahulk644/appflowy-mcp-server"
 Repository = "https://github.com/Rahulk644/appflowy-mcp-server"
 Issues = "https://github.com/Rahulk644/appflowy-mcp-server/issues"
+
+[tool.hatch.version]
+path = "appflowy_mcp/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["appflowy_mcp"]

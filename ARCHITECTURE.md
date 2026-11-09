@@ -98,8 +98,10 @@ first-party commercial stack; archived backend routes alone are insufficient.
 Exact commits, image digest, evidence and validation gaps are in
 [COMPATIBILITY.md](COMPATIBILITY.md).
 
-`pyproject.toml`, `requirements.txt`, the runtime version and `server.json` must
-stay consistent. Release publishing validates versions, gates on package and
+`appflowy_mcp.__version__` is the version source for Hatch builds and all runtime
+surfaces. `scripts/release_metadata.py` stamps/checks the generated registry version
+and image reference. Dependencies live in `pyproject.toml`; `requirements.txt` is a
+repository-root install shim. Release publishing validates versions, gates on package and
 compatibility checks, then publishes GHCR and registry metadata. PyPI remains
 disabled. Published tags/images are immutable release artifacts; fixes on `main`
 need a new patch version before they reach installed stable clients.

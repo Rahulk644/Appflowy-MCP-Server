@@ -7,22 +7,50 @@
     "url": "https://github.com/Rahulk644/Appflowy-MCP-Server",
     "source": "github"
   },
-  "version": "2.0.1",
+  "version": "2.0.2",
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/rahulk644/appflowy-mcp-server:2.0.1",
-      "transport": {"type": "stdio"},
+      "identifier": "ghcr.io/rahulk644/appflowy-mcp-server:2.0.2",
+      "transport": {
+        "type": "stdio"
+      },
       "packageArguments": [
-        {"type": "positional", "valueHint": "command", "value": "appflowy-mcp"}
+        {
+          "type": "positional",
+          "valueHint": "command",
+          "value": "appflowy-mcp"
+        }
       ],
       "environmentVariables": [
-        {"name": "APPFLOWY_BASE_URL", "description": "AppFlowy Cloud or self-hosted origin", "default": "https://beta.appflowy.cloud"},
-        {"name": "APPFLOWY_EMAIL", "description": "Dedicated bot account email (or use an access token)"},
-        {"name": "APPFLOWY_PASSWORD", "description": "Bot account password", "isSecret": true},
-        {"name": "APPFLOWY_ACCESS_TOKEN", "description": "AppFlowy token, as an alternative to email/password", "isSecret": true},
-        {"name": "ALLOWED_WORKSPACE_IDS", "description": "Comma-separated workspace IDs this server may access"},
-        {"name": "APPFLOWY_READ_ONLY", "description": "Disable writes and expose read-only tools", "default": "false"}
+        {
+          "name": "APPFLOWY_BASE_URL",
+          "description": "AppFlowy Cloud or self-hosted origin",
+          "default": "https://beta.appflowy.cloud"
+        },
+        {
+          "name": "APPFLOWY_EMAIL",
+          "description": "Dedicated bot account email (or use an access token)"
+        },
+        {
+          "name": "APPFLOWY_PASSWORD",
+          "description": "Bot account password",
+          "isSecret": true
+        },
+        {
+          "name": "APPFLOWY_ACCESS_TOKEN",
+          "description": "AppFlowy token, as an alternative to email/password",
+          "isSecret": true
+        },
+        {
+          "name": "ALLOWED_WORKSPACE_IDS",
+          "description": "Comma-separated workspace IDs this server may access"
+        },
+        {
+          "name": "APPFLOWY_READ_ONLY",
+          "description": "Disable writes and expose read-only tools",
+          "default": "false"
+        }
       ]
     }
   ]

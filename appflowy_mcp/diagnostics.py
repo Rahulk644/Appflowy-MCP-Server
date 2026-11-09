@@ -2,10 +2,12 @@
 
 import json
 import os
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import version
 from importlib.resources import files
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from . import __version__
 
 
 async def diagnose(check_connection: bool = False) -> dict:
@@ -83,13 +85,9 @@ async def diagnose(check_connection: bool = False) -> dict:
             )
         finally:
             await server._close_async_client()
-    try:
-        package_version = version("appflowy-mcp-server")
-    except PackageNotFoundError:
-        package_version = "development"
     return {
         "ok": all(item["ok"] for item in checks),
-        "version": package_version,
+        "version": __version__,
         "connection_checked": connection_checked,
         "checks": checks,
     }

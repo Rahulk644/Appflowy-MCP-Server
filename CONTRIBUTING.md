@@ -6,6 +6,11 @@ document conversion in `tests/test_documents.py`, and collaboration helpers in
 compatibility function aliases are not a second session store. Use the shared
 `mock_appflowy_api` fixture for HTTP-level backend tests.
 
+Declare runtime and development dependencies in `pyproject.toml`. The source
+`requirements.txt` delegates to that project; it is not a separate dependency list.
+Run `python scripts/release_metadata.py` when validating a candidate, and see
+[RELEASING.md](RELEASING.md) before changing version metadata.
+
 ## Development setup
 
 Python 3.11+ is required. From a fork or checkout:

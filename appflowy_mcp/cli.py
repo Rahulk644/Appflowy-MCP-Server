@@ -2,18 +2,14 @@
 
 import argparse
 import asyncio
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+from . import __version__
+
 
 def main() -> None:
-    try:
-        package_version = version("appflowy-mcp-server")
-    except PackageNotFoundError:
-        package_version = "development"
-
     parser = argparse.ArgumentParser(description="AppFlowy MCP server")
     parser.add_argument(
         "command", nargs="?", choices=("serve", "doctor"), default="serve"
@@ -24,7 +20,7 @@ def main() -> None:
     parser.add_argument(
         "--json", action="store_true", help="Doctor: machine-readable diagnostics"
     )
-    parser.add_argument("--version", action="version", version=package_version)
+    parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
         "--transport", choices=("stdio", "streamable-http"), default="stdio"
     )

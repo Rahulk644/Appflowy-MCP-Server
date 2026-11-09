@@ -23,11 +23,10 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - name: Install ruff
-      # Pinned deliberately: an unpinned ruff silently adopts new rules on release,
-      # so a build that passed yesterday fails today with no code change. Bump this
-      # on purpose, with the fixes in the same commit.
-      run: pip install ruff==0.16.1
+    - name: Check release metadata
+      run: python scripts/release_metadata.py
+    - name: Install development dependencies
+      run: pip install -e '.[dev]'
     - name: Lint
       run: ruff check .
     - name: Format check
@@ -44,7 +43,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt pytest pytest-asyncio
+        pip install -e '.[dev]'
     - name: Run tests
       run: python -m pytest -q
 
@@ -66,7 +65,7 @@ jobs:
         python-version: ${{ matrix.python }}
     - name: Build distributions
       run: |
-        python -m pip install build twine
+        python -m pip install -e '.[dev]'
         python -m build
         python -m twine check dist/*
     - name: Test installation outside the checkout
@@ -94,6 +93,6 @@ jobs:
         cache-to: type=gha,mode=max
     - name: Test MCP from the installed container
       run: |
-        python -m pip install "mcp>=2.3,<3" httpx
+        python -m pip install .
         python scripts/smoke_mcp.py --docker-image appflowy-mcp:smoke
         python scripts/smoke_mcp.py --docker-image appflowy-mcp:smoke --transport streamable-http

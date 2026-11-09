@@ -25,7 +25,7 @@ jobs:
       env:
         RELEASE_TAG: ${{ inputs.release_tag }}
       run: |
-        [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]
+        [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.-]+)?$ ]]
     - uses: actions/checkout@v4
       with:
         ref: refs/tags/${{ inputs.release_tag }}
@@ -34,12 +34,17 @@ jobs:
         RELEASE_TAG: ${{ inputs.release_tag }}
       run: |
         python - <<'PY'
-        import json, os, pathlib, tomllib
-        package = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version']
-        registry = json.loads(pathlib.Path('server.json').read_text())
-        assert os.environ['RELEASE_TAG'] == 'v' + package
-        assert registry['version'] == package
-        assert registry['packages'][0]['identifier'] == 'ghcr.io/rahulk644/appflowy-mcp-server:' + package
+        import json, os, pathlib, subprocess, sys, tomllib
+        script = pathlib.Path('scripts/release_metadata.py')
+        if script.is_file():
+            subprocess.run([sys.executable, str(script), '--tag', os.environ['RELEASE_TAG']], check=True)
+        else:
+            # Metadata-only recovery also supports immutable tags predating the helper.
+            package = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version']
+            registry = json.loads(pathlib.Path('server.json').read_text())
+            assert os.environ['RELEASE_TAG'] == 'v' + package
+            assert registry['version'] == package
+            assert registry['packages'][0]['identifier'] == 'ghcr.io/rahulk644/appflowy-mcp-server:' + package
         PY
     - name: Check whether this version is already published
       id: published

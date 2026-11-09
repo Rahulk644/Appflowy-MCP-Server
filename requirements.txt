@@ -1,14 +1,2 @@
-fastapi
-# MCPServer and modern/legacy protocol support; keep in sync with pyproject.toml.
-mcp>=2.3,<3
-httpx2>=2.10,<3
-uvicorn
-httpx
-pydantic
-python-dotenv
-markdown-it-py
-mdit-py-plugins
-# Supported decoder. Fresh fixtures do not reproduce the historical failure;
-# keep this pin until representative snapshot tests justify an upgrade.
-# See COMPATIBILITY.md for evidence and candidate-version checks.
-pycrdt==0.13.0
+# Compatibility install from the repository root; dependencies live in pyproject.toml.
+-e .
