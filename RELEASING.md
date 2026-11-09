@@ -2,7 +2,7 @@
 
 The Python distribution is `appflowy-mcp-server`; the command is `appflowy-mcp`.
 Wheels include the implementation, OAuth provider and `appflowy://guide`.
-Supported releases are available from GitHub source and public GHCR images.
+Supported releases provide GitHub wheel/source assets and public GHCR images.
 **PyPI publishing is explicitly deferred and unconditionally disabled.**
 
 ## Verify a candidate

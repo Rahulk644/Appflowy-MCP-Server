@@ -32,8 +32,8 @@ client credentials and bearer/refresh tokens; use a private persistent volume an
 one server worker. Atomic replacement prevents partial writes but does not provide
 cross-process coordination, encryption at rest or a token database.
 
-Google sign-in must use an allowed, verified email. On current `main`, persisted
-access and refresh tokens are checked against the current email allow-list;
+Google sign-in must use an allowed, verified email. In 2.0.2, persisted access and
+refresh tokens are checked against the current email allow-list;
 legacy tokens without a subject require sign-in again. OAuth tokens must carry
 the `appflowy` scope. Refreshes preserve resource binding and the requested scope.
 Refresh credentials rotate. Reuse of an already-rotated credential revokes its
