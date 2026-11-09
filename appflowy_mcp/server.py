@@ -1253,12 +1253,12 @@ async def create_page(
 async def create_database(
     workspace_id: str, parent_view_id: str, name: str, layout: str = "grid"
 ) -> str:
-    """Creates a new database page (layout: grid | board | calendar); returns the
-    new view_id. Creates default fields — add more with add_database_field, then
-    resolve the database_id via list_databases."""
+    """Creates a database page with grid, board, calendar, chart, list, gallery,
+    feed, form or timeline layout. Returns the view_id; resolve the database_id
+    via list_databases. Additional layouts depend on the target backend."""
     _require_workspace(workspace_id)
     if layout not in _DB_LAYOUTS:
-        raise ValueError("layout must be one of: grid, board, calendar")
+        raise ValueError("layout must be one of: " + ", ".join(_DB_LAYOUTS))
     body = {
         "parent_view_id": parent_view_id,
         "layout": _DB_LAYOUTS[layout],
@@ -1272,11 +1272,12 @@ async def create_database(
 async def create_database_view(
     workspace_id: str, view_id: str, layout: str, name: str = ""
 ) -> str:
-    """Adds another view (grid | board | calendar) over an EXISTING database's
-    data. view_id: any existing view of the target database."""
+    """Adds a view over an existing database. Layouts: grid, board, calendar,
+    chart, list, gallery, feed, form, timeline. view_id is an existing view of the
+    target database. Availability depends on the backend."""
     _require_workspace(workspace_id)
     if layout not in _DB_LAYOUTS:
-        raise ValueError("layout must be one of: grid, board, calendar")
+        raise ValueError("layout must be one of: " + ", ".join(_DB_LAYOUTS))
     metadata = await get_page(workspace_id, view_id)
     view = metadata.get("view", metadata)
     extra = view.get("extra") or {}
