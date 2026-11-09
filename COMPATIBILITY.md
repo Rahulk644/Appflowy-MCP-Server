@@ -1,0 +1,80 @@
+# Compatibility and validation
+
+## Validated baseline
+
+On 2026-11-09, the disposable integration suite ran against the official
+[AppFlowy-SelfHost-Commercial](https://github.com/AppFlowy-IO/AppFlowy-SelfHost-Commercial/tree/0796497ebe36d569734fb8eb559f28264d86605c)
+compose stack at commit `0796497ebe36d569734fb8eb559f28264d86605c`:
+Cloud **0.20.5**, Web **0.20.11**, local GoTrue, Postgres, Redis, MinIO and keyword search.
+Cloud image digest:
+`sha256:4c45a647ae892783afdc8af175c9f2e75d54085a47e62aea1a347a562e0345f3`.
+The source contracts were also checked against AppFlowy-Web commit
+`d940e0e767b0bb8df594bb15a9390b958ff89ee4`.
+
+| Area | Evidence | Limits |
+|---|---|---|
+| Password login, refresh, workspace/folder | Live disposable stack | External identity providers not exercised |
+| Markdown document create/read/edit/replace | Live readback and visible browser content | Replacement precondition checks a fetched snapshot, not a server atomic compare-and-swap |
+| Typed row create/update/delete and row body | Authoritative collab readback; visible Grid row | Materialized REST row details can lag; not every field type has a typed encoder |
+| Keyword search and bounded results | Live search hit | Requires deployed search service; semantic search not claimed |
+| Markdown tree import/export | Live persistence | Bounded text entries; no ZIP/Notion/PDF converter |
+| File payload upload/download/delete | Live byte comparison and cleanup | Small files; no multipart or rich media orchestration |
+| Formula expression and Timeline settings | Collab write/readback | Schema support; formula evaluation and full Timeline UI behavior are not certified |
+| Structured private/custom space ACL | Live write/readback | No multi-user authorization penetration test |
+| MCP 2 server and input errors | Protocol contract tests plus clean-install stdio/HTTP | Desktop product UIs not individually certified |
+| Google OAuth routing and persistence | Offline auth/discovery/provider tests | No real Google sign-in performed in CI |
+| AI chat | Current Web contract and decoder tests | Answer generation needs an AI-enabled deployment; opt-in and experimental |
+| AppFlowy SaaS | Protected opt-in harness | No current Cloud account/workspace configured for this release |
+
+The committed JSON report in [compatibility-reports](compatibility-reports/) records
+individual live checks. Browser tests assert rendered document text and Grid cell
+text. CI artifacts carry each run's live report; failures are not labeled validated.
+
+## Reproduce disposable checks
+
+Requires Docker Compose and enough memory for the first-party stack (a fresh pull
+is substantial). Ports are bound to loopback and tests use a dummy account.
+
+```bash
+pip install -e '.[dev,browser]'
+python -m playwright install --with-deps chromium
+python scripts/selfhost.py up
+APPFLOWY_BROWSER_TEST=true python scripts/selfhost.py test
+python scripts/selfhost.py down
+```
+
+`down` removes only the `appflowy-mcp-compat` project's containers and volumes.
+Do not point these tests at an existing production stack using that project name.
+Use `APPFLOWY_TEST_CHROMIUM=/path/to/chromium` for an existing browser binary.
+The WebSocket base ends in `/ws/v2`; `/ws` prevents live row rendering.
+
+The compatibility workflow runs on PRs, weekly, and as a release gate. Its baseline
+is pinned for reproducibility; update the commit and record new evidence when
+AppFlowy releases change. A passing baseline does not prove every later release.
+
+## Decoder policy
+
+Production remains pinned to **pycrdt 0.13.0**. The captured disposable database
+fixture passes decode and incremental structural-mutation convergence on both
+0.13.0 and 0.14.1. It does **not** reproduce the historical 0.14.1 decoding failure.
+CI tests 0.13.0 as required and 0.14.1/latest as non-blocking candidates.
+
+Decode errors raise `CollabDecodeError` with the supported pin and stop before any
+write. The server never substitutes an empty document or silently retries a
+structural edit with guessed state. Obtain a sanitized representative failing
+snapshot before loosening the pin or proposing an upstream binary-format patch.
+
+## Opt-in Cloud job
+
+Configure the `appflowy-cloud-test` GitHub Actions environment with a dedicated,
+disposable workspace. Set repository variable `ENABLE_CLOUD_COMPATIBILITY=true`;
+set `APPFLOWY_TEST_BASE_URL`, `APPFLOWY_TEST_WORKSPACE_ID`, and optional
+`APPFLOWY_TEST_PARENT_VIEW_ID` / `APPFLOWY_TEST_DATABASE_ID` variables. Put
+`APPFLOWY_TEST_EMAIL` / `APPFLOWY_TEST_PASSWORD` or `APPFLOWY_TEST_ACCESS_TOKEN` in
+environment secrets. Run **AppFlowy compatibility** manually; mutations require
+the separate workflow input. No PR job receives these credentials.
+
+The standalone harness refuses ordinary CI. This protected job explicitly sets
+both `APPFLOWY_COMPAT_ALLOW_CI=true` and
+`APPFLOWY_COMPAT_DISPOSABLE_WORKSPACE=true`. Credentials and raw bodies are omitted
+from its report. Cloud checks remain unvalidated until that job actually succeeds.

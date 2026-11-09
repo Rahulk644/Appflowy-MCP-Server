@@ -2,7 +2,7 @@
 
 The distribution is `appflowy-mcp-server`; its executable is `appflowy-mcp`.
 The package includes the server, Google OAuth provider, and `appflowy://guide`.
-MCP 1.x and pycrdt remain pinned as documented in `requirements.txt`.
+MCP 2.3+ uses `MCPServer`; pycrdt remains pinned to 0.13.0. Python 3.11+ is required.
 
 ## Build and verify locally
 
@@ -46,9 +46,9 @@ ready to publish to PyPI and after completing the publisher setup below.
 
 ## Publish a release
 
-1. Update `project.version` in `pyproject.toml` and finalize the changelog.
+1. Update `project.version`, the runtime server version, and both versions in `server.json`; finalize the changelog.
 2. Merge the reviewed change and wait for CI to pass.
-3. Publish a GitHub Release tagged `v<project.version>`, such as `v0.1.0`.
+3. Publish a GitHub Release tagged `v<project.version>`, such as `v2.0.0`.
 
 Publishing the GitHub Release triggers `.github/workflows/release.yml`. It reruns
 CI for the release, verifies that the tag matches the package version, and publishes
@@ -65,17 +65,32 @@ No package or image is published by pull-request CI or an ordinary push to `main
 These commands require a successfully published release. Until then, use the
 GitHub-source command in the README or build Docker locally.
 
+PyPI commands are intentionally omitted until that distribution is published.
+The source installation works without PyPI:
+
 ```bash
-uvx --from appflowy-mcp-server appflowy-mcp --env-file /absolute/path/to/.env
-# Pin a release:
-uvx --from appflowy-mcp-server==0.1.0 appflowy-mcp --env-file /absolute/path/to/.env
+uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.0 appflowy-mcp --env-file /absolute/path/to/.env
 ```
 
 ```bash
 docker run --rm --env-file .env -p 127.0.0.1:8000:8000 \
-  ghcr.io/rahulk644/appflowy-mcp-server:0.1.0
+  ghcr.io/rahulk644/appflowy-mcp-server:2.0.0
 ```
 
 For stdio, use `-i` instead of publishing a port and append `appflowy-mcp` to
 override the image's HTTP command. Persist `OAUTH_STORE_PATH` on a volume for
 remote OAuth deployments, as in the existing Compose file.
+
+## Official MCP Registry
+
+`server.json` publishes an OCI package under
+`io.github.Rahulk644/appflowy-mcp-server`. Its ownership label is embedded in the
+Dockerfile. After the container job, the registry job verifies anonymous access,
+verifies the pinned publisher's Sigstore bundle, logs in with GitHub OIDC and
+publishes the metadata. A private initial GHCR package must be made Public in
+GitHub package settings before that job can succeed. Rerun only the failed
+registry job after fixing visibility. Registry publication is independent of PyPI.
+
+The release gate also runs the pinned commercial self-hosted lifecycle/browser
+suite and required supported-decoder fixture check. Candidate decoders are
+informational. Cloud/AI validation is documented separately in COMPATIBILITY.md.

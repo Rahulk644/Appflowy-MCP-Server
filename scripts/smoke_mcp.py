@@ -14,9 +14,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
-from mcp import ClientSession, StdioServerParameters
+import httpx2
+from mcp import Client, ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 
 def fixture_environment() -> dict[str, str]:
@@ -49,7 +50,9 @@ async def check_session(read, write) -> None:
     async with ClientSession(read, write) as session:
         await session.initialize()
         tools = await session.list_tools()
-        assert any(tool.name == "get_workspaces" for tool in tools.tools)
+        assert any(
+            tool.name in {"get_workspaces", "appflowy_fetch"} for tool in tools.tools
+        )
         guide = await session.read_resource("appflowy://guide")
         assert any(
             "AppFlowy Agent Guide" in getattr(part, "text", "")
@@ -69,6 +72,15 @@ async def smoke_stdio(docker_image: str | None) -> None:
     params = StdioServerParameters(command=command, args=args, env=fixture_env)
     async with stdio_client(params) as (read, write):
         await check_session(read, write)
+    async with Client(params, mode="2026-07-28") as client:
+        tools = await client.list_tools()
+        assert tools.tools
+        guide = await client.read_resource("appflowy://guide")
+        assert any(
+            "AppFlowy Agent Guide" in getattr(part, "text", "")
+            for part in guide.contents
+        )
+        print("Modern 2026-07-28 stdio discovery and guide passed")
 
 
 @contextmanager
@@ -132,10 +144,16 @@ async def smoke_http(docker_image: str | None) -> None:
             assert (await client.get(f"{url}/mcp/")).status_code == 401
             metadata = await client.get(f"{url}/.well-known/oauth-authorization-server")
             assert metadata.status_code == 200
-        async with streamablehttp_client(
-            f"{url}/mcp/",
-            headers={"Authorization": "Bearer packaging-smoke-token"},
-        ) as (read, write, _):
+        async with (
+            httpx2.AsyncClient(
+                headers={"Authorization": "Bearer packaging-smoke-token"},
+                timeout=httpx2.Timeout(30, read=60),
+            ) as http_client,
+            streamable_http_client(f"{url}/mcp/", http_client=http_client) as (
+                read,
+                write,
+            ),
+        ):
             await check_session(read, write)
 
 

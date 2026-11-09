@@ -30,10 +30,10 @@ import os
 import re
 import secrets
 import string
-import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, Literal
@@ -43,7 +43,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from markdown_it import MarkdownIt
 from markdown_it.tree import SyntaxTreeNode
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mdit_py_plugins.dollarmath import dollarmath_plugin
 from pycrdt import Array, Doc, Map, Text
@@ -165,13 +165,24 @@ _transport_security = TransportSecuritySettings(
 
 # streamable_http_path="/" so mounting the app at /mcp yields a clean /mcp/
 # endpoint (not the doubled /mcp/mcp you'd get with the default path).
-mcp = FastMCP(
-    "appflowy-mcp",
-    instructions=APPFLOWY_INSTRUCTIONS,
+COMPACT_INSTRUCTIONS = """AppFlowy workspace tools. Pass arguments inside request. Use appflowy_search to find pages,
+appflowy_fetch(id='self') to discover permitted workspaces, and database(command='list')
+to map view IDs to database IDs. Never substitute a view ID for a database ID.
+Rows accept typed cells keyed by exact field name or ID. Batches return per-item
+outcomes; retry failed cell edits by row_id rather than creating duplicates.
+Use Markdown for document content. Read before replacing and send expected_markdown.
+Search and row reads support limit/offset/response_format. Import/export use payload
+entries, not server filesystem paths. Destructive operations and AI workspace-wide
+context require the user's intent. Full reference: resource appflowy://guide."""
+
+mcp = MCPServer(
+    "appflowy_mcp",
+    instructions=COMPACT_INSTRUCTIONS
+    if os.environ.get("APPFLOWY_TOOL_PROFILE", "compact") == "compact"
+    else APPFLOWY_INSTRUCTIONS,
     icons=[{"src": ICON_DATA_URI, "mimeType": "image/svg+xml", "sizes": ["any"]}],
     website_url="https://github.com/Rahulk644/appflowy-mcp-server",
-    transport_security=_transport_security,
-    streamable_http_path="/",
+    version="2.0.0",
 )
 
 
@@ -200,7 +211,7 @@ def agent_guide() -> str:
 # operations; they are NOT a security boundary). readOnly = performs no writes;
 # destructive = makes an irreversible change; idempotent = repeating with the same
 # args reaches the same state; openWorld = calls the external AppFlowy service (always
-# true here). Presets are applied per tool via @mcp.tool(annotations=...).
+# true here). Presets are applied per tool via @_legacy_tool(annotations=...).
 _READ = {
     "readOnlyHint": True,
     "destructiveHint": False,
@@ -226,6 +237,27 @@ _DESTRUCTIVE = {
     "openWorldHint": True,
 }
 
+
+def _read_only() -> bool:
+    return os.environ.get("APPFLOWY_READ_ONLY", "false").lower() in {"1", "true", "yes"}
+
+
+_tool_profile = os.environ.get("APPFLOWY_TOOL_PROFILE", "compact")
+if _tool_profile not in {"compact", "legacy"}:
+    raise ValueError("APPFLOWY_TOOL_PROFILE must be compact or legacy")
+
+
+def _legacy_tool(*, annotations):
+    def decorate(function):
+        if _tool_profile == "legacy" and (
+            not _read_only() or annotations["readOnlyHint"]
+        ):
+            return mcp.tool(annotations=annotations)(function)
+        return function
+
+    return decorate
+
+
 # ---- Optional OAuth (Google-federated) — active only if GOOGLE_CLIENT_ID set --
 OAUTH_ISSUER = os.environ.get("OAUTH_ISSUER", "").rstrip("/")
 _oauth_provider = None
@@ -244,7 +276,6 @@ if os.environ.get("GOOGLE_CLIENT_ID") and OAUTH_ISSUER:
 _access_token = None
 _refresh_token = None
 _token_expires_at = 0
-_token_lock = threading.Lock()
 _async_auth_lock = asyncio.Lock()
 _async_client: httpx.AsyncClient | None = None
 
@@ -256,6 +287,8 @@ def _allowed_workspaces() -> set[str] | None:
 
 
 def _require_workspace(workspace_id: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", workspace_id):
+        raise ValueError("workspace_id must be an ID without path separators")
     allowed = _allowed_workspaces()
     if allowed is not None and workspace_id not in allowed:
         raise ValueError(
@@ -318,26 +351,8 @@ async def _login_async() -> None:
     _token_expires_at = time.time() + expires_in - 60  # 60s buffer
 
 
-def _login() -> None:
-    global _access_token, _refresh_token, _token_expires_at
-    email = os.environ.get("APPFLOWY_EMAIL")
-    password = os.environ.get("APPFLOWY_PASSWORD")
-
-    if not email or not password:
-        raise ValueError("APPFLOWY_EMAIL and APPFLOWY_PASSWORD must be set.")
-
-    url = f"{BASE_URL}/gotrue/token?grant_type=password"
-    data = {"email": email, "password": password}
-
-    with httpx.Client(timeout=30.0) as client:
-        res = client.post(url, json=data, headers={"User-Agent": USER_AGENT})
-        res.raise_for_status()
-
-    body = res.json()
-    _access_token = body.get("access_token")
-    _refresh_token = body.get("refresh_token")
-    expires_in = body.get("expires_in", 3600)
-    _token_expires_at = time.time() + expires_in - 60  # 60s buffer
+async def _login() -> None:
+    await _login_async()  # 60s buffer
 
 
 async def _refresh_async() -> None:
@@ -363,30 +378,18 @@ async def _refresh_async() -> None:
     _token_expires_at = time.time() + expires_in - 60
 
 
-def _refresh() -> None:
-    global _access_token, _refresh_token, _token_expires_at
-    if not _refresh_token:
-        _login()
-        return
-
-    url = f"{BASE_URL}/gotrue/token?grant_type=refresh_token"
-    data = {"refresh_token": _refresh_token}
-
-    with httpx.Client(timeout=30.0) as client:
-        res = client.post(url, json=data, headers={"User-Agent": USER_AGENT})
-        if res.status_code != 200:
-            _login()  # refresh token expired -> re-login
-            return
-
-    body = res.json()
-    _access_token = body.get("access_token")
-    if body.get("refresh_token"):
-        _refresh_token = body.get("refresh_token")
-    expires_in = body.get("expires_in", 3600)
-    _token_expires_at = time.time() + expires_in - 60
+async def _refresh() -> None:
+    await _refresh_async()
 
 
 async def get_auth_headers_async() -> dict:
+    configured = os.environ.get("APPFLOWY_ACCESS_TOKEN")
+    if configured:
+        return {
+            "Authorization": f"Bearer {configured}",
+            "User-Agent": USER_AGENT,
+            "Content-Type": "application/json",
+        }
     if not _access_token or time.time() >= _token_expires_at:
         async with _async_auth_lock:
             if not _access_token or time.time() >= _token_expires_at:
@@ -403,21 +406,8 @@ async def get_auth_headers_async() -> dict:
     }
 
 
-def get_auth_headers() -> dict:
-    if not _access_token or time.time() >= _token_expires_at:
-        with _token_lock:
-            if not _access_token or time.time() >= _token_expires_at:
-                try:
-                    _refresh() if _refresh_token else _login()
-                except Exception:  # noqa: BLE001 - any refresh failure (expired/revoked/
-                    # malformed token, transport error) is recoverable by a full re-login.
-                    _login()
-
-    return {
-        "Authorization": f"Bearer {_access_token}",
-        "User-Agent": USER_AGENT,
-        "Content-Type": "application/json",
-    }
+async def get_auth_headers() -> dict:
+    return await get_auth_headers_async()
 
 
 # Status-code → what the agent should do about it. Surfaced in tool errors so a
@@ -453,12 +443,21 @@ async def _api_call_async(method: str, path: str, **kwargs) -> httpx.Response:
     """Authenticated AppFlowy API call with actionable errors. `path` is joined to
     BASE_URL. Raises RuntimeError with a specific, agent-readable message on failure so a
     tool error tells the agent how to fix its call rather than dumping a raw traceback."""
+    if _read_only() and method.upper() not in {"GET", "HEAD"}:
+        raise PermissionError("APPFLOWY_READ_ONLY is enabled; writes are disabled")
+    if (
+        not path.startswith("/api/")
+        or any(part in {".", ".."} for part in path.split("/"))
+        or any(char in path for char in ("%", "?", "#", "\\"))
+    ):
+        raise ValueError("Invalid AppFlowy API path")
     try:
         client = await _get_async_client()
+        extra_headers = kwargs.pop("headers", {})
         res = await client.request(
             method,
             f"{BASE_URL}{path}",
-            headers=await get_auth_headers_async(),
+            headers={**(await get_auth_headers_async()), **extra_headers},
             **kwargs,
         )
         res.raise_for_status()
@@ -482,37 +481,13 @@ async def _api_call_async(method: str, path: str, **kwargs) -> httpx.Response:
         ) from e
 
 
-def _api_call(method: str, path: str, **kwargs) -> httpx.Response:
-    """Synchronous v1 API path; safe to call even if the caller owns an event loop."""
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            res = client.request(
-                method, f"{BASE_URL}{path}", headers=get_auth_headers(), **kwargs
-            )
-            res.raise_for_status()
-            # AppFlowy can report an application error inside HTTP 200. In
-            # particular, row writes with a view_id in place of database_id
-            # return code 1012 without an HTTP error status.
-            try:
-                payload = res.json()
-            except ValueError:
-                payload = None
-            _raise_appflowy_application_error(payload, path)
-            return res
-    except httpx.HTTPStatusError as e:
-        code = e.response.status_code
-        hint = _ERROR_HINTS.get(code, "unexpected AppFlowy API error")
-        body = " ".join(e.response.text[:200].split())
-        raise RuntimeError(f"AppFlowy API {code}: {hint}. Server said: {body}") from e
-    except httpx.RequestError as e:
-        raise RuntimeError(
-            f"AppFlowy API request did not complete ({type(e).__name__}) — retry shortly"
-        ) from e
+async def _api_call(method: str, path: str, **kwargs) -> httpx.Response:
+    return await _api_call_async(method, path, **kwargs)
 
 
-def _post(path: str, body: dict):
+async def _post(path: str, body: dict):
     """POST JSON to the AppFlowy API; return the response's `data` field."""
-    return _api_call("POST", path, json=body).json().get("data", "")
+    return (await _api_call("POST", path, json=body)).json().get("data", "")
 
 
 # ---- Collab / CRDT layer (Tier 2): edit/delete any block or row --------------
@@ -556,16 +531,14 @@ def _collab_doc_state(payload) -> bytes:
     return base64.b64decode(ds) if isinstance(ds, str) else bytes(ds)
 
 
-def _collab_doc(workspace_id: str, object_id: str, collab_type: int) -> Doc:
+async def _collab_doc(workspace_id: str, object_id: str, collab_type: int) -> Doc:
     """Fetch a collab object and load it into a pycrdt Doc."""
-    res = _api_call(
+    res = await _api_call(
         "GET",
         f"/api/workspace/v1/{workspace_id}/collab/{object_id}",
         params={"collab_type": collab_type},
     )
-    doc = Doc()
-    doc.apply_update(_collab_doc_state(res.json()))
-    return doc
+    return _decode_collab(_collab_doc_state(res.json()), collab_type)
 
 
 async def _collab_doc_async(workspace_id: str, object_id: str, collab_type: int) -> Doc:
@@ -575,8 +548,23 @@ async def _collab_doc_async(workspace_id: str, object_id: str, collab_type: int)
         f"/api/workspace/v1/{workspace_id}/collab/{object_id}",
         params={"collab_type": collab_type},
     )
+    return _decode_collab(_collab_doc_state(res.json()), collab_type)
+
+
+class CollabDecodeError(RuntimeError):
+    """An incompatible snapshot must never turn into an empty document write."""
+
+
+def _decode_collab(state: bytes, collab_type: int) -> Doc:
     doc = Doc()
-    doc.apply_update(_collab_doc_state(res.json()))
+    try:
+        doc.apply_update(state)
+    except (ValueError, RuntimeError) as exc:
+        raise CollabDecodeError(
+            f"Cannot decode AppFlowy collab type {collab_type} with pycrdt {version('pycrdt')}; "
+            "no write was sent. Use the supported dependency pin and attach a disposable "
+            "snapshot to a compatibility report before upgrading."
+        ) from exc
     return doc
 
 
@@ -585,15 +573,19 @@ _COLLAB_WEB_UPDATE_ROUTE = (
 )
 
 
-def _collab_web_update(
+async def _collab_web_update(
     workspace_id: str, object_id: str, doc: Doc, state_vector: bytes, collab_type: int
 ) -> None:
     """POST the yrs update diff (changes since state_vector) — the server merges it."""
     update = doc.get_update(state_vector)
-    _api_call(
-        "POST",
-        _COLLAB_WEB_UPDATE_ROUTE.format(workspace_id=workspace_id, object_id=object_id),
-        json={"doc_state": list(update), "collab_type": collab_type},
+    (
+        await _api_call(
+            "POST",
+            _COLLAB_WEB_UPDATE_ROUTE.format(
+                workspace_id=workspace_id, object_id=object_id
+            ),
+            json={"doc_state": list(update), "collab_type": collab_type},
+        )
     )
 
 
@@ -610,7 +602,7 @@ def _row_document_id(row_id: str) -> str:
     return str(uuid.uuid5(uuid.UUID(row_id), "document_id"))
 
 
-def _is_database_row(workspace_id: str, view_id: str) -> bool:
+async def _is_database_row(workspace_id: str, view_id: str) -> bool:
     """True if `view_id` addresses a database ROW rather than a page-view document.
 
     The page-view endpoint carries `row_data` for a row and `encoded_collab` for a
@@ -623,7 +615,11 @@ def _is_database_row(workspace_id: str, view_id: str) -> bool:
     """
     try:
         meta = (
-            _api_call("GET", f"/api/workspace/{workspace_id}/page-view/{view_id}")
+            (
+                await _api_call(
+                    "GET", f"/api/workspace/{workspace_id}/page-view/{view_id}"
+                )
+            )
             .json()
             .get("data", {})
         )
@@ -645,15 +641,17 @@ def _is_database_row(workspace_id: str, view_id: str) -> bool:
 _ROW_COLLAB = 4
 
 
-def _open_document(workspace_id: str, page_id: str):
+async def _open_document(workspace_id: str, page_id: str):
     """Load a document collab for block editing. `page_id` may be the document's own
     view id OR a database row id — a row id is transparently resolved to the row's
     body document (so agents can edit a Board card's checklist by its row id).
     Returns (doc, object_id, document_map); pass object_id back to _collab_web_update."""
     root = None
     try:
-        doc = _collab_doc(workspace_id, page_id, 0)
+        doc = await _collab_doc(workspace_id, page_id, 0)
         root = doc.get("data", type=Map)
+    except CollabDecodeError:
+        raise
     except RuntimeError:
         # `page_id` is a database row id, not a Document collab. AppFlowy rejects a row
         # id fetched as collab_type 0 ("Record ... not active") instead of returning the
@@ -661,7 +659,7 @@ def _open_document(workspace_id: str, page_id: str):
         pass
     if root is None or "document" not in root:
         page_id = _row_document_id(page_id)
-        doc = _collab_doc(workspace_id, page_id, 0)
+        doc = await _collab_doc(workspace_id, page_id, 0)
         root = doc.get("data", type=Map)
     return doc, page_id, root["document"]
 
@@ -672,6 +670,8 @@ async def _open_document_async(workspace_id: str, page_id: str):
     try:
         doc = await _collab_doc_async(workspace_id, page_id, 0)
         root = doc.get("data", type=Map)
+    except CollabDecodeError:
+        raise
     except RuntimeError:
         pass
     if root is None or "document" not in root:
@@ -687,10 +687,10 @@ async def get_page_markdown_async(workspace_id: str, page_id: str) -> str:
     return _doc_to_markdown(document)
 
 
-def _open_database(workspace_id: str, database_id: str):
+async def _open_database(workspace_id: str, database_id: str):
     """Load a database collab (type 1); return (doc, root) where root is the DATABASE
     map holding 'fields' (field_id -> field) and 'views' (view_id -> view)."""
-    doc = _collab_doc(workspace_id, database_id, 1)
+    doc = await _collab_doc(workspace_id, database_id, 1)
     return doc, doc.get("data", type=Map)["database"]
 
 
@@ -703,13 +703,13 @@ def _to_yjs(v):
     return v
 
 
-def _field_types(workspace_id: str, database_id: str) -> dict:
+async def _field_types(workspace_id: str, database_id: str) -> dict:
     """Map field_id -> numeric field type. Prefer the DB collab (authoritative, no
     lag); a new cell must be tagged with the right type or the write appears to silently
     drop. Fall back to the REST fields view (which lags for just-created fields) only if
     the collab can't be read."""
     try:
-        _, root = _open_database(workspace_id, database_id)
+        _, root = await _open_database(workspace_id, database_id)
         fields = root["fields"]
         return {fid: int(fields[fid]["ty"]) for fid in fields if "ty" in fields[fid]}
     except Exception:  # noqa: BLE001 - the collab read is the authoritative source but
@@ -717,7 +717,7 @@ def _field_types(workspace_id: str, database_id: str) -> dict:
         # lags for just-created fields but is better than failing the whole call.
         return {
             f["id"]: int(f.get("field_type_id", 0))
-            for f in get_database_fields(workspace_id, database_id)
+            for f in (await get_database_fields(workspace_id, database_id))
         }
 
 
@@ -777,25 +777,27 @@ def _write_select(field, tk, data):
     to[tk]["content"] = json.dumps(data, separators=(",", ":"))
 
 
-@mcp.tool(annotations=_READ)
-def get_workspaces() -> list:
+@_legacy_tool(annotations=_READ)
+async def get_workspaces() -> list:
     """Retrieves your AppFlowy workspaces (filtered to ALLOWED_WORKSPACE_IDS if set)."""
-    data = _api_call("GET", "/api/workspace").json().get("data", [])
+    data = (await _api_call("GET", "/api/workspace")).json().get("data", [])
     allowed = _allowed_workspaces()
     if allowed is not None:
         data = [w for w in data if (w.get("workspace_id") or w.get("id")) in allowed]
     return data
 
 
-@mcp.tool(annotations=_READ)
-def get_workspace_folder(workspace_id: str, depth: int = 1) -> dict:
+@_legacy_tool(annotations=_READ)
+async def get_workspace_folder(workspace_id: str, depth: int = 1) -> dict:
     """
     Fetches the folder structure (pages and databases) of a workspace.
     Useful for finding the database_id to query.
     """
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/folder"
-    return _api_call("GET", path, params={"depth": depth}).json().get("data", {})
+    return (
+        (await _api_call("GET", path, params={"depth": depth})).json().get("data", {})
+    )
 
 
 async def get_workspace_folder_async(workspace_id: str, depth: int = 1) -> dict:
@@ -809,24 +811,24 @@ async def get_workspace_folder_async(workspace_id: str, depth: int = 1) -> dict:
     )
 
 
-@mcp.tool(annotations=_READ)
-def get_database_fields(workspace_id: str, database_id: str) -> list:
+@_legacy_tool(annotations=_READ)
+async def get_database_fields(workspace_id: str, database_id: str) -> list:
     """Retrieves the fields/columns available in a database."""
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/database/{database_id}/fields"
-    return _api_call("GET", path).json().get("data", [])
+    return (await _api_call("GET", path)).json().get("data", [])
 
 
-@mcp.tool(annotations=_READ)
-def get_database_row_ids(workspace_id: str, database_id: str) -> list:
+@_legacy_tool(annotations=_READ)
+async def get_database_row_ids(workspace_id: str, database_id: str) -> list:
     """Retrieves the row IDs in a database."""
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/database/{database_id}/row"
-    return _api_call("GET", path).json().get("data", [])
+    return (await _api_call("GET", path)).json().get("data", [])
 
 
-@mcp.tool(annotations=_READ)
-def get_database_row_details(
+@_legacy_tool(annotations=_READ)
+async def get_database_row_details(
     workspace_id: str, database_id: str, row_ids: str, with_doc: bool = False
 ) -> list:
     """
@@ -838,11 +840,13 @@ def get_database_row_details(
     params = {"ids": row_ids}
     if with_doc:
         params["with_doc"] = "true"
-    return _api_call("GET", path, params=params).json().get("data", [])
+    return (await _api_call("GET", path, params=params)).json().get("data", [])
 
 
-@mcp.tool(annotations=_CREATE)
-def create_database_row(workspace_id: str, database_id: str, row_data: str) -> str:
+@_legacy_tool(annotations=_CREATE)
+async def create_database_row(
+    workspace_id: str, database_id: str, row_data: str
+) -> str:
     """
     Creates a new row in a database.
     row_data: JSON string with keys `cells` (field_id/field_name -> value) and
@@ -854,11 +858,13 @@ def create_database_row(workspace_id: str, database_id: str, row_data: str) -> s
     except json.JSONDecodeError as exc:
         raise ValueError("row_data must be a valid JSON string") from exc
     path = f"/api/workspace/{workspace_id}/database/{database_id}/row"
-    return _api_call("POST", path, json=data).json().get("data", "")
+    return (await _api_call("POST", path, json=data)).json().get("data", "")
 
 
-@mcp.tool(annotations=_WRITE)
-def upsert_database_row(workspace_id: str, database_id: str, row_data: str) -> str:
+@_legacy_tool(annotations=_WRITE)
+async def upsert_database_row(
+    workspace_id: str, database_id: str, row_data: str
+) -> str:
     """
     Creates or updates (upserts) a row — the idempotent way to write. Use it to
     update a row in place (e.g. move a Board card by setting its Status cell) without
@@ -878,11 +884,13 @@ def upsert_database_row(workspace_id: str, database_id: str, row_data: str) -> s
     except json.JSONDecodeError as exc:
         raise ValueError("row_data must be a valid JSON string") from exc
     path = f"/api/workspace/{workspace_id}/database/{database_id}/row"
-    return _api_call("PUT", path, json=data).json().get("data", "")
+    return (await _api_call("PUT", path, json=data)).json().get("data", "")
 
 
-@mcp.tool(annotations=_READ)
-def list_updated_rows(workspace_id: str, database_id: str, after: str = "") -> list:
+@_legacy_tool(annotations=_READ)
+async def list_updated_rows(
+    workspace_id: str, database_id: str, after: str = ""
+) -> list:
     """
     Lists rows updated in a database (change feed) — useful for syncing "what
     changed" into a pipeline.
@@ -893,21 +901,31 @@ def list_updated_rows(workspace_id: str, database_id: str, after: str = "") -> l
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/database/{database_id}/row/updated"
     params = {"after": after} if after else {}
-    return _api_call("GET", path, params=params).json().get("data", [])
+    return (await _api_call("GET", path, params=params)).json().get("data", [])
 
 
 # ---- Structure & document tools (create/manage pages, databases, blocks) ----
 
-_DB_LAYOUTS = {"grid": 1, "board": 2, "calendar": 3}
+_DB_LAYOUTS = {
+    "grid": 1,
+    "board": 2,
+    "calendar": 3,
+    "chart": 5,
+    "list": 6,
+    "gallery": 7,
+    "feed": 8,
+    "form": 9,
+    "timeline": 10,
+}
 
 
-@mcp.tool(annotations=_READ)
-def list_databases(workspace_id: str) -> list:
+@_legacy_tool(annotations=_READ)
+async def list_databases(workspace_id: str) -> list:
     """Lists databases in the workspace with their id and views. Use this to map a
     Board/Grid view to its database_id (a folder view_id is NOT the database_id)."""
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/database"
-    return _api_call("GET", path).json().get("data", [])
+    return (await _api_call("GET", path)).json().get("data", [])
 
 
 # ---- Markdown → AppFlowy block tree ---------------------------------------
@@ -1422,8 +1440,8 @@ def _set_text(text_obj, delta) -> None:
         pos += n
 
 
-@mcp.tool(annotations=_CREATE)
-def create_page(
+@_legacy_tool(annotations=_CREATE)
+async def create_page(
     workspace_id: str,
     parent_view_id: str,
     name: str,
@@ -1447,13 +1465,13 @@ def create_page(
         body["page_data"] = {"type": "page", "children": _md_to_blocks(markdown)}
     elif page_data:
         body["page_data"] = json.loads(page_data)
-    res = _post(f"/api/workspace/{workspace_id}/page-view", body)
+    res = await _post(f"/api/workspace/{workspace_id}/page-view", body)
     # this endpoint returns {"view_id","database_id"}; the tool contract is the view_id
     return res["view_id"] if isinstance(res, dict) else res
 
 
-@mcp.tool(annotations=_CREATE)
-def create_database(
+@_legacy_tool(annotations=_CREATE)
+async def create_database(
     workspace_id: str, parent_view_id: str, name: str, layout: str = "grid"
 ) -> str:
     """Creates a new database page (layout: grid | board | calendar); returns the
@@ -1467,12 +1485,12 @@ def create_database(
         "layout": _DB_LAYOUTS[layout],
         "name": name,
     }
-    res = _post(f"/api/workspace/{workspace_id}/page-view", body)
+    res = await _post(f"/api/workspace/{workspace_id}/page-view", body)
     return res["view_id"] if isinstance(res, dict) else res
 
 
-@mcp.tool(annotations=_CREATE)
-def create_database_view(
+@_legacy_tool(annotations=_CREATE)
+async def create_database_view(
     workspace_id: str, view_id: str, layout: str, name: str = ""
 ) -> str:
     """Adds another view (grid | board | calendar) over an EXISTING database's
@@ -1480,16 +1498,60 @@ def create_database_view(
     _require_workspace(workspace_id)
     if layout not in _DB_LAYOUTS:
         raise ValueError("layout must be one of: grid, board, calendar")
-    body = {"layout": _DB_LAYOUTS[layout]}
+    metadata = await get_page(workspace_id, view_id)
+    view = metadata.get("view", metadata)
+    extra = view.get("extra") or {}
+    if isinstance(extra, str):
+        extra = json.loads(extra)
+    database_id = extra.get("database_id")
+    if not database_id:
+        for database in await list_databases(workspace_id):
+            if any(
+                item.get("view_id", item.get("id")) == view_id
+                for item in database.get("views", [])
+            ):
+                database_id = database["id"]
+                break
+    if not database_id:
+        raise ValueError(
+            "Cannot resolve database_id from this view; use appflowy_database(command='list')"
+        )
+    parent = (
+        view_id
+        if extra.get("is_database_container")
+        else view.get("parent_view_id", view_id)
+    )
+    body = {
+        "layout": _DB_LAYOUTS[layout],
+        "parent_view_id": parent,
+        "database_id": database_id,
+        "embedded": False,
+    }
     if name:
         body["name"] = name
-    return _post(
-        f"/api/workspace/{workspace_id}/page-view/{view_id}/database-view", body
-    )
+    for attempt in range(3):
+        try:
+            result = await _post(
+                f"/api/workspace/{workspace_id}/page-view/{view_id}/database-view", body
+            )
+            break
+        except RuntimeError as exc:
+            # Current Cloud explicitly rejects a stale admission before applying
+            # the database update. Only that rejection is safe to retry here;
+            # timeouts or generic failures could have created the view already.
+            message = str(exc)
+            if attempt == 2 or not (
+                "Failed to apply database update: Database dashboard admission"
+                in message
+                and "changed; retry later" in message
+            ):
+                raise
+            await asyncio.sleep(0.5 * (attempt + 1))
+    return result["view_id"] if isinstance(result, dict) else result
 
 
-@mcp.tool(annotations=_CREATE)
-def add_database_field(
+@_legacy_tool(annotations=_CREATE)
+async def add_database_field(
     workspace_id: str,
     database_id: str,
     name: str,
@@ -1503,11 +1565,13 @@ def add_database_field(
     body = {"name": name, "field_type": field_type}
     if type_option:
         body["type_option_data"] = json.loads(type_option)
-    return _post(f"/api/workspace/{workspace_id}/database/{database_id}/fields", body)
+    return await _post(
+        f"/api/workspace/{workspace_id}/database/{database_id}/fields", body
+    )
 
 
-@mcp.tool(annotations=_WRITE)
-def update_database_field(
+@_legacy_tool(annotations=_WRITE)
+async def update_database_field(
     workspace_id: str,
     database_id: str,
     field_id: str,
@@ -1525,7 +1589,7 @@ def update_database_field(
     _require_workspace(workspace_id)
     if not name and not type_option:
         raise ValueError("provide name and/or type_option to change")
-    doc, root = _open_database(workspace_id, database_id)
+    doc, root = await _open_database(workspace_id, database_id)
     fields = root["fields"]
     if field_id not in fields:
         raise ValueError(f"field {field_id} not found in this database")
@@ -1537,18 +1601,20 @@ def update_database_field(
         if type_option:
             fld["type_option"] = _to_yjs(json.loads(type_option))
         fld["last_modified"] = int(time.time())
-    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
     return field_id
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
-def delete_database_field(workspace_id: str, database_id: str, field_id: str) -> str:
+@_legacy_tool(annotations=_DESTRUCTIVE)
+async def delete_database_field(
+    workspace_id: str, database_id: str, field_id: str
+) -> str:
     """Deletes a field/column (Tier 2 / collab — AppFlowy has no REST endpoint for this).
     Removes it from the schema and from every view's column order. The primary/title
     field cannot be deleted. Rows keep the now-orphaned cell harmlessly. There is no
     field trash, so this is irreversible via the API. Returns the deleted field_id."""
     _require_workspace(workspace_id)
-    doc, root = _open_database(workspace_id, database_id)
+    doc, root = await _open_database(workspace_id, database_id)
     fields = root["fields"]
     if field_id not in fields:
         raise ValueError(f"field {field_id} not found in this database")
@@ -1569,12 +1635,12 @@ def delete_database_field(workspace_id: str, database_id: str, field_id: str) ->
             # referenced this field is left for the client to ignore (rare, tolerated).
             if "field_settings" in view and field_id in view["field_settings"]:
                 del view["field_settings"][field_id]
-    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
     return field_id
 
 
-@mcp.tool(annotations=_WRITE)
-def add_select_option(
+@_legacy_tool(annotations=_WRITE)
+async def add_select_option(
     workspace_id: str,
     database_id: str,
     field_id: str,
@@ -1592,7 +1658,7 @@ def add_select_option(
         raise ValueError("option name is required")
     if color not in SELECT_COLORS:
         raise ValueError(f"color must be one of: {', '.join(SELECT_COLORS)}")
-    doc, root = _open_database(workspace_id, database_id)
+    doc, root = await _open_database(workspace_id, database_id)
     fields = root["fields"]
     if field_id not in fields:
         raise ValueError(f"field {field_id} not found in this database")
@@ -1609,19 +1675,19 @@ def add_select_option(
     with doc.transaction():
         data["options"].append({"id": oid, "name": name, "color": color})
         _write_select(field, tk, data)
-    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
     return oid
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
-def delete_select_option(
+@_legacy_tool(annotations=_DESTRUCTIVE)
+async def delete_select_option(
     workspace_id: str, database_id: str, field_id: str, option: str
 ) -> str:
     """Removes an option from a SingleSelect/MultiSelect column by its option id OR its
     label/name (Tier 2 / collab). Rows still tagged with it keep the now-orphaned id
     harmlessly (AppFlowy ignores unknown option ids). Returns the removed option id."""
     _require_workspace(workspace_id)
-    doc, root = _open_database(workspace_id, database_id)
+    doc, root = await _open_database(workspace_id, database_id)
     fields = root["fields"]
     if field_id not in fields:
         raise ValueError(f"field {field_id} not found in this database")
@@ -1637,12 +1703,12 @@ def delete_select_option(
     with doc.transaction():
         data["options"] = [o for o in data["options"] if o["id"] != match["id"]]
         _write_select(field, tk, data)
-    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
     return match["id"]
 
 
-@mcp.tool(annotations=_WRITE)
-def set_group_by(
+@_legacy_tool(annotations=_WRITE)
+async def set_group_by(
     workspace_id: str, database_id: str, view_id: str, field_id: str
 ) -> str:
     """Sets the field a Board view groups its columns by (Tier 2 / collab — AppFlowy has
@@ -1651,7 +1717,7 @@ def set_group_by(
     "No <field>" column; other groupable types (e.g. Checkbox) regenerate on the client.
     Replaces any existing grouping. Returns the view_id."""
     _require_workspace(workspace_id)
-    doc, root = _open_database(workspace_id, database_id)
+    doc, root = await _open_database(workspace_id, database_id)
     views = root["views"]
     if view_id not in views:
         raise ValueError(f"view {view_id} not found in this database")
@@ -1680,12 +1746,12 @@ def set_group_by(
     sv = doc.get_state()
     with doc.transaction():
         views[view_id]["groups"] = _to_yjs([setting])
-    _collab_web_update(workspace_id, database_id, doc, sv, 1)
+    (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
     return view_id
 
 
-@mcp.tool(annotations=_CREATE)
-def append_blocks(
+@_legacy_tool(annotations=_CREATE)
+async def append_blocks(
     workspace_id: str, view_id: str, markdown: str = "", blocks: str = ""
 ) -> str:
     """Appends content to the END of a document (append-only — cannot edit or
@@ -1707,8 +1773,8 @@ def append_blocks(
         raise ValueError("provide `markdown` (preferred) or `blocks`")
     # REST append can reorder nested blocks; collab preserves their order.
     if any(isinstance(block, dict) and block.get("children") for block in payload):
-        return add_blocks(workspace_id, view_id, blocks=json.dumps(payload))
-    result = _post(
+        return await add_blocks(workspace_id, view_id, blocks=json.dumps(payload))
+    result = await _post(
         f"/api/workspace/{workspace_id}/page-view/{view_id}/append-block",
         {"blocks": payload},
     )
@@ -1720,16 +1786,16 @@ def append_blocks(
     # onto a Kanban card got a silent no-op. Only re-route once the id is CONFIRMED
     # to be a row; the REST call provably wrote nothing in that case, so the collab
     # append cannot duplicate content.
-    if _is_database_row(workspace_id, view_id):
-        return add_blocks(workspace_id, view_id, markdown=markdown, blocks=blocks)
+    if await _is_database_row(workspace_id, view_id):
+        return await add_blocks(workspace_id, view_id, markdown=markdown, blocks=blocks)
     return result
 
 
-@mcp.tool(annotations=_CREATE)
-def create_space(workspace_id: str, name: str, is_private: bool = False) -> str:
+@_legacy_tool(annotations=_CREATE)
+async def create_space(workspace_id: str, name: str, is_private: bool = False) -> str:
     """Creates a top-level Space; returns its view_id."""
     _require_workspace(workspace_id)
-    return _post(
+    return await _post(
         f"/api/workspace/{workspace_id}/space",
         {
             "name": name,
@@ -1740,8 +1806,8 @@ def create_space(workspace_id: str, name: str, is_private: bool = False) -> str:
     )
 
 
-@mcp.tool(annotations=_WRITE)
-def move_page(
+@_legacy_tool(annotations=_WRITE)
+async def move_page(
     workspace_id: str, view_id: str, new_parent_view_id: str, prev_view_id: str = ""
 ) -> str:
     """Moves a page under new_parent_view_id (prev_view_id: optional sibling to
@@ -1750,63 +1816,67 @@ def move_page(
     body = {"new_parent_view_id": new_parent_view_id}
     if prev_view_id:
         body["prev_view_id"] = prev_view_id
-    return _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/move", body)
+    return await _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/move", body)
 
 
-@mcp.tool(annotations=_CREATE)
-def duplicate_page(workspace_id: str, view_id: str, suffix: str = "") -> str:
+@_legacy_tool(annotations=_CREATE)
+async def duplicate_page(workspace_id: str, view_id: str, suffix: str = "") -> str:
     """Duplicates a page and its subtree."""
     _require_workspace(workspace_id)
     body = {"suffix": suffix} if suffix else {}
-    return _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/duplicate", body)
+    return await _post(
+        f"/api/workspace/{workspace_id}/page-view/{view_id}/duplicate", body
+    )
 
 
-@mcp.tool(annotations=_WRITE)
-def trash_page(workspace_id: str, view_id: str) -> str:
+@_legacy_tool(annotations=_WRITE)
+async def trash_page(workspace_id: str, view_id: str) -> str:
     """Moves a page to trash (reversible in-app; there is no hard delete via REST)."""
     _require_workspace(workspace_id)
-    return _post(f"/api/workspace/{workspace_id}/page-view/{view_id}/move-to-trash", {})
+    return await _post(
+        f"/api/workspace/{workspace_id}/page-view/{view_id}/move-to-trash", {}
+    )
 
 
-@mcp.tool(annotations=_WRITE)
-def rename_page(workspace_id: str, view_id: str, name: str) -> str:
+@_legacy_tool(annotations=_WRITE)
+async def rename_page(workspace_id: str, view_id: str, name: str) -> str:
     """Renames any page, database/board, or space (by its view_id). To retitle a Board
     CARD, set the row's primary cell via update_row_cells instead — a card is a row,
     not a page."""
     _require_workspace(workspace_id)
-    return _post(
+    return await _post(
         f"/api/workspace/{workspace_id}/page-view/{view_id}/update-name",
         {"name": name},
     )
 
 
-@mcp.tool(annotations=_WRITE)
-def restore_page(workspace_id: str, view_id: str) -> str:
+@_legacy_tool(annotations=_WRITE)
+async def restore_page(workspace_id: str, view_id: str) -> str:
     """Restores a page from trash — the inverse of trash_page."""
     _require_workspace(workspace_id)
-    return _post(
+    return await _post(
         f"/api/workspace/{workspace_id}/page-view/{view_id}/restore-from-trash", {}
     )
 
 
-@mcp.tool(annotations=_READ)
-def get_page(workspace_id: str, view_id: str) -> dict:
+@_legacy_tool(annotations=_READ)
+async def get_page(workspace_id: str, view_id: str) -> dict:
     """Gets a page's metadata (name, icon, layout, ...). For the page's CONTENT as
     Markdown, use get_page_markdown."""
     _require_workspace(workspace_id)
     path = f"/api/workspace/{workspace_id}/page-view/{view_id}"
-    return _api_call("GET", path).json().get("data", {})
+    return (await _api_call("GET", path)).json().get("data", {})
 
 
-@mcp.tool(annotations=_READ)
-def get_page_markdown(workspace_id: str, page_id: str) -> str:
+@_legacy_tool(annotations=_READ)
+async def get_page_markdown(workspace_id: str, page_id: str) -> str:
     """Reads a Document page — or a database row's body — as Markdown (the inverse
     of create_page(markdown=...)). page_id may be a document view id OR a database
     row id (auto-resolved to the card's body document). Returns Markdown: headings,
     bulleted / numbered / task lists (nested), quotes, fenced code, dividers,
     images, and inline bold / italic / strikethrough / code / links."""
     _require_workspace(workspace_id)
-    _, _, document = _open_document(workspace_id, page_id)
+    _, _, document = await _open_document(workspace_id, page_id)
     return _doc_to_markdown(document)
 
 
@@ -2296,8 +2366,8 @@ _CELL_WRITE_RETRIES = 4
 _CELL_WRITE_BACKOFF = 0.4  # seconds, multiplied by the (1-based) attempt number
 
 
-@mcp.tool(annotations=_WRITE)
-def update_row_cells(
+@_legacy_tool(annotations=_WRITE)
+async def update_row_cells(
     workspace_id: str, database_id: str, row_id: str, cells: str
 ) -> str:
     """Updates cells on an EXISTING row — works for ANY row, including ones created
@@ -2321,10 +2391,10 @@ def update_row_cells(
     ftypes = None  # field types for NEW cells — loaded once, only if needed
     last = "no attempt made"
     for attempt in range(_CELL_WRITE_RETRIES):
-        doc = _collab_doc(workspace_id, row_id, _ROW_COLLAB)
+        doc = await _collab_doc(workspace_id, row_id, _ROW_COLLAB)
         row_cells = doc.get("data", type=Map)["data"]["cells"]
         if ftypes is None and any(fid not in row_cells for fid in updates):
-            ftypes = _field_types(workspace_id, database_id)
+            ftypes = await _field_types(workspace_id, database_id)
         sv = doc.get_state()
         now = int(time.time())
         with doc.transaction():
@@ -2342,8 +2412,8 @@ def update_row_cells(
                         }
                     )
         try:
-            _collab_web_update(workspace_id, row_id, doc, sv, _ROW_COLLAB)
-            after = _collab_doc(workspace_id, row_id, _ROW_COLLAB).get(
+            (await _collab_web_update(workspace_id, row_id, doc, sv, _ROW_COLLAB))
+            after = (await _collab_doc(workspace_id, row_id, _ROW_COLLAB)).get(
                 "data", type=Map
             )["data"]["cells"]
             if confirmed(after):
@@ -2352,20 +2422,20 @@ def update_row_cells(
         except RuntimeError as e:
             last = str(e)
         if attempt + 1 < _CELL_WRITE_RETRIES:
-            time.sleep(_CELL_WRITE_BACKOFF * (attempt + 1))
+            await asyncio.sleep(_CELL_WRITE_BACKOFF * (attempt + 1))
     raise RuntimeError(
         f"update_row_cells: write to row {row_id} did not confirm after "
         f"{_CELL_WRITE_RETRIES} attempts ({last})"
     )
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
-def delete_row(workspace_id: str, database_id: str, row_id: str) -> str:
+@_legacy_tool(annotations=_DESTRUCTIVE)
+async def delete_row(workspace_id: str, database_id: str, row_id: str) -> str:
     """Deletes a row from a database — works for ANY row, including UI-created ones
     (Tier 2 / collab). Removes it from every view's row_orders and deletes the
     row's collab object. This is a hard delete (not trash)."""
     _require_workspace(workspace_id)
-    doc = _collab_doc(workspace_id, database_id, 1)
+    doc = await _collab_doc(workspace_id, database_id, 1)
     views = doc.get("data", type=Map)["database"]["views"]
     sv = doc.get_state()
     removed = 0
@@ -2377,25 +2447,27 @@ def delete_row(workspace_id: str, database_id: str, row_id: str) -> str:
                     del row_orders[i]
                     removed += 1
     if removed:
-        _collab_web_update(workspace_id, database_id, doc, sv, 1)
+        (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
     # Best effort: the row is already gone from every view; a failure here only leaves
     # an orphaned collab object, so don't surface it as a tool error.
     try:
-        _api_call(
-            "DELETE",
-            f"/api/workspace/{workspace_id}/collab/{row_id}",
-            json={
-                "object_id": row_id,
-                "workspace_id": workspace_id,
-                "collab_type": _ROW_COLLAB,
-            },
+        (
+            await _api_call(
+                "DELETE",
+                f"/api/workspace/{workspace_id}/collab/{row_id}",
+                json={
+                    "object_id": row_id,
+                    "workspace_id": workspace_id,
+                    "collab_type": _ROW_COLLAB,
+                },
+            )
         )
     except RuntimeError:
         pass
     return f"deleted row {row_id} (removed from {removed} view order(s))"
 
 
-def _delete_row_strict(workspace_id: str, database_id: str, row_id: str) -> dict:
+async def _delete_row_strict(workspace_id: str, database_id: str, row_id: str) -> dict:
     """Delete a row and prove both authoritative cleanup steps completed.
 
     This is intentionally separate from the public ``delete_row`` MCP tool. The
@@ -2403,7 +2475,7 @@ def _delete_row_strict(workspace_id: str, database_id: str, row_id: str) -> dict
     collab, while compatibility validation needs failures to remain observable.
     """
     _require_workspace(workspace_id)
-    doc = _collab_doc(workspace_id, database_id, 1)
+    doc = await _collab_doc(workspace_id, database_id, 1)
     views = doc.get("data", type=Map)["database"]["views"]
     sv = doc.get_state()
     removed = 0
@@ -2415,9 +2487,9 @@ def _delete_row_strict(workspace_id: str, database_id: str, row_id: str) -> dict
                     del row_orders[i]
                     removed += 1
     if removed:
-        _collab_web_update(workspace_id, database_id, doc, sv, 1)
+        (await _collab_web_update(workspace_id, database_id, doc, sv, 1))
 
-    verified = _collab_doc(workspace_id, database_id, 1)
+    verified = await _collab_doc(workspace_id, database_id, 1)
     verified_views = verified.get("data", type=Map)["database"]["views"]
     if any(
         order["id"] == row_id
@@ -2426,20 +2498,22 @@ def _delete_row_strict(workspace_id: str, database_id: str, row_id: str) -> dict
     ):
         raise RuntimeError("row remained in database view order after cleanup")
 
-    _api_call(
-        "DELETE",
-        f"/api/workspace/{workspace_id}/collab/{row_id}",
-        json={
-            "object_id": row_id,
-            "workspace_id": workspace_id,
-            "collab_type": _ROW_COLLAB,
-        },
+    (
+        await _api_call(
+            "DELETE",
+            f"/api/workspace/{workspace_id}/collab/{row_id}",
+            json={
+                "object_id": row_id,
+                "workspace_id": workspace_id,
+                "collab_type": _ROW_COLLAB,
+            },
+        )
     )
     return {"row_id": row_id, "removed_view_orders": removed, "verified": True}
 
 
-@mcp.tool(annotations=_CREATE)
-def add_block(
+@_legacy_tool(annotations=_CREATE)
+async def add_block(
     workspace_id: str,
     page_id: str,
     block_type: str,
@@ -2457,7 +2531,7 @@ def add_block(
     to the row's body document (this is how you add a checkbox/sub-task to a card).
     `text` renders inline Markdown (bold/italic/code/strike/links); code/math is literal."""
     _require_workspace(workspace_id)
-    doc, page_id, d = _open_document(workspace_id, page_id)
+    doc, page_id, d = await _open_document(workspace_id, page_id)
     blocks, meta = d["blocks"], d["meta"]
     cmap, tmap = meta["children_map"], meta["text_map"]
     parent = parent_block_id or d["page_id"]
@@ -2484,7 +2558,7 @@ def add_block(
                 _set_text(tmap[ext], _md_inline_to_delta(text))
         blocks[bid] = Map(block)
         cmap[parent_children_key].append(bid)
-    _collab_web_update(workspace_id, page_id, doc, sv, 0)
+    (await _collab_web_update(workspace_id, page_id, doc, sv, 0))
     return bid
 
 
@@ -2517,8 +2591,8 @@ def _insert_pd_block(bmap, cmap, tmap, spec, parent_id) -> str:
     return bid
 
 
-@mcp.tool(annotations=_WRITE)
-def add_blocks(
+@_legacy_tool(annotations=_WRITE)
+async def add_blocks(
     workspace_id: str,
     page_id: str,
     markdown: str = "",
@@ -2544,7 +2618,7 @@ def add_blocks(
         raise ValueError("add_blocks: provide markdown= or blocks=")
     if not specs:
         return ""
-    doc, page_id, d = _open_document(workspace_id, page_id)
+    doc, page_id, d = await _open_document(workspace_id, page_id)
     bmap, meta = d["blocks"], d["meta"]
     cmap, tmap = meta["children_map"], meta["text_map"]
     parent = parent_block_id or d["page_id"]
@@ -2556,17 +2630,19 @@ def add_blocks(
             bid = _insert_pd_block(bmap, cmap, tmap, spec, parent)
             cmap[parent_ckey].append(bid)
             ids.append(bid)
-    _collab_web_update(workspace_id, page_id, doc, sv, 0)
+    (await _collab_web_update(workspace_id, page_id, doc, sv, 0))
     return ",".join(ids)
 
 
-@mcp.tool(annotations=_WRITE)
-def edit_block_text(workspace_id: str, page_id: str, block_id: str, text: str) -> str:
+@_legacy_tool(annotations=_WRITE)
+async def edit_block_text(
+    workspace_id: str, page_id: str, block_id: str, text: str
+) -> str:
     """Replaces the text of an existing document block. `text` renders inline Markdown
     (**bold**, *italic*, `code`, ~~strike~~, [links](url)); code/math blocks keep it
     literal. page_id may be a document view id or a database row id (auto-resolved)."""
     _require_workspace(workspace_id)
-    doc, page_id, d = _open_document(workspace_id, page_id)
+    doc, page_id, d = await _open_document(workspace_id, page_id)
     block = d["blocks"][block_id]
     tmap = d["meta"]["text_map"]
     ext = block.get("external_id", None)
@@ -2580,12 +2656,12 @@ def edit_block_text(workspace_id: str, page_id: str, block_id: str, text: str) -
             block["external_type"] = "text"
             tmap[ext] = Text("")
         _set_text(tmap[ext], delta)
-    _collab_web_update(workspace_id, page_id, doc, sv, 0)
+    (await _collab_web_update(workspace_id, page_id, doc, sv, 0))
     return block_id
 
 
-@mcp.tool(annotations=_WRITE)
-def replace_text(
+@_legacy_tool(annotations=_WRITE)
+async def replace_text(
     workspace_id: str,
     page_id: str,
     find: str,
@@ -2601,7 +2677,7 @@ def replace_text(
     _require_workspace(workspace_id)
     if not find:
         raise ValueError("`find` must be non-empty")
-    doc, page_id, d = _open_document(workspace_id, page_id)
+    doc, page_id, d = await _open_document(workspace_id, page_id)
     blocks, tmap = d["blocks"], d["meta"]["text_map"]
     hits = []
     for bid in blocks:
@@ -2628,16 +2704,16 @@ def replace_text(
                 del t[i : i + len(find)]
                 if replace:
                     t.insert(i, replace)
-    _collab_web_update(workspace_id, page_id, doc, sv, 0)
+    (await _collab_web_update(workspace_id, page_id, doc, sv, 0))
     return f"replaced in {len(hits)} block(s)"
 
 
-@mcp.tool(annotations=_DESTRUCTIVE)
-def delete_block(workspace_id: str, page_id: str, block_id: str) -> str:
+@_legacy_tool(annotations=_DESTRUCTIVE)
+async def delete_block(workspace_id: str, page_id: str, block_id: str) -> str:
     """Deletes a block from a document (removes it from its parent, plus its text
     and children references). page_id may be a document view id or a row id."""
     _require_workspace(workspace_id)
-    doc, page_id, d = _open_document(workspace_id, page_id)
+    doc, page_id, d = await _open_document(workspace_id, page_id)
     blocks, cmap, tmap = d["blocks"], d["meta"]["children_map"], d["meta"]["text_map"]
     if block_id not in blocks:
         raise ValueError(f"block {block_id} not found")
@@ -2659,14 +2735,22 @@ def delete_block(workspace_id: str, page_id: str, block_id: str) -> str:
         if ckey and ckey in cmap:
             del cmap[ckey]
         del blocks[block_id]
-    _collab_web_update(workspace_id, page_id, doc, sv, 0)
+    (await _collab_web_update(workspace_id, page_id, doc, sv, 0))
     return f"deleted block {block_id}"
 
 
+# Register compact workflows only after the shared backend is fully defined.
+if _tool_profile == "compact":
+    from .workflows import register
+
+    register(mcp)
+
 # ---- HTTP app (Streamable HTTP + SSE), Bearer-gated -------------------------
 
-_streamable_app = mcp.streamable_http_app()
-_sse_app = mcp.sse_app()
+_streamable_app = mcp.streamable_http_app(
+    streamable_http_path="/", transport_security=_transport_security
+)
+_sse_app = mcp.sse_app(transport_security=_transport_security)
 
 
 @asynccontextmanager
@@ -2728,7 +2812,7 @@ async def verify_token(request: Request, call_next):
     path = request.url.path
     public = any(path == p or path.startswith(p) for p in _PUBLIC_PREFIXES)
     secret = os.environ.get("MCP_SECRET_TOKEN")
-    if not public and secret:
+    if not public and (secret or _oauth_provider):
         auth = request.headers.get("Authorization", "")
         # Bearer header (technical clients) or ?token= (link method for UIs that
         # can't set a header — the token then rides in the URL/logs).
@@ -2737,7 +2821,7 @@ async def verify_token(request: Request, call_next):
             if auth.startswith("Bearer ")
             else request.query_params.get("token", "")
         )
-        ok = bool(token) and hmac.compare_digest(token, secret)
+        ok = bool(secret and token) and hmac.compare_digest(token, secret)
         if not ok and _oauth_provider and token:
             ok = bool(await _oauth_provider.load_access_token(token))
         if not ok:

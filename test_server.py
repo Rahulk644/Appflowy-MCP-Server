@@ -5,6 +5,7 @@ import os
 
 import pytest
 
+os.environ.setdefault("APPFLOWY_TOOL_PROFILE", "legacy")
 os.environ.setdefault("MCP_SECRET_TOKEN", "test-secret-123")
 os.environ.setdefault("ALLOWED_WORKSPACE_IDS", "ws-allowed")
 os.environ.setdefault("MCP_ALLOWED_HOSTS", "testserver")
@@ -130,7 +131,8 @@ def test_collab_doc_state_tolerates_shapes():
         b({"weird": {"nope": 1}})
 
 
-def test_collab_web_update_uses_reported_route(monkeypatch):
+@pytest.mark.asyncio
+async def test_collab_web_update_uses_reported_route(monkeypatch):
     from pycrdt import Doc
 
     calls = []
@@ -139,10 +141,12 @@ def test_collab_web_update_uses_reported_route(monkeypatch):
     monkeypatch.setattr(
         server,
         "_api_call",
-        lambda method, path, **kwargs: calls.append((method, path, kwargs)),
+        _async_stub(
+            lambda method, path, **kwargs: calls.append((method, path, kwargs))
+        ),
     )
 
-    server._collab_web_update("ws-1", "object-1", doc, state_vector, 4)
+    (await server._collab_web_update("ws-1", "object-1", doc, state_vector, 4))
 
     assert calls[0][0:2] == (
         "POST",
@@ -774,7 +778,9 @@ def test_live_compatibility_harness_reversible_flag(monkeypatch):
     monkeypatch.setattr(
         server,
         "replace_text",
-        lambda workspace_id, page_id, find, replace: "replaced in 1 block(s)",
+        _async_stub(
+            lambda workspace_id, page_id, find, replace: "replaced in 1 block(s)"
+        ),
     )
 
     async def fake_verify_document_text(workspace_id, view_id, expected):
@@ -869,10 +875,10 @@ def test_live_compatibility_reversible_collab_and_row_checks(monkeypatch):
         return {"verified": True}
 
     monkeypatch.setattr(server, "_api_call_async", fake_api_call)
-    monkeypatch.setattr(server, "replace_text", fake_replace_text)
+    monkeypatch.setattr(server, "replace_text", _async_stub(fake_replace_text))
     monkeypatch.setattr(server, "get_page_markdown_async", fake_markdown)
-    monkeypatch.setattr(server, "update_row_cells", fake_update_row_cells)
-    monkeypatch.setattr(server, "_delete_row_strict", fake_delete_row)
+    monkeypatch.setattr(server, "update_row_cells", _async_stub(fake_update_row_cells))
+    monkeypatch.setattr(server, "_delete_row_strict", _async_stub(fake_delete_row))
     monkeypatch.setattr(
         live_compatibility, "_verify_document_text", fake_verify_document_text
     )
@@ -920,11 +926,13 @@ def test_live_compatibility_row_cleanup_failure_is_reported(monkeypatch):
 
     recorder = live_compatibility.CompatibilityRecorder()
 
-    monkeypatch.setattr(server, "update_row_cells", lambda *args: "row-1")
+    monkeypatch.setattr(server, "update_row_cells", _async_stub(lambda *args: "row-1"))
     monkeypatch.setattr(
         server,
         "_delete_row_strict",
-        lambda *args: (_ for _ in ()).throw(RuntimeError("AppFlowy API 403")),
+        _async_stub(
+            lambda *args: (_ for _ in ()).throw(RuntimeError("AppFlowy API 403"))
+        ),
     )
     monkeypatch.setattr(
         live_compatibility,
@@ -965,12 +973,12 @@ def test_live_compatibility_row_cleanup_runs_after_edit_failure(monkeypatch):
     monkeypatch.setattr(
         server,
         "update_row_cells",
-        lambda *args: (_ for _ in ()).throw(RuntimeError("edit failed")),
+        _async_stub(lambda *args: (_ for _ in ()).throw(RuntimeError("edit failed"))),
     )
     monkeypatch.setattr(
         server,
         "_delete_row_strict",
-        lambda *args: cleanup_calls.append(args) or {"verified": True},
+        _async_stub(lambda *args: cleanup_calls.append(args) or {"verified": True}),
     )
     monkeypatch.setattr(
         live_compatibility,
@@ -1010,33 +1018,37 @@ def test_live_compatibility_row_cleanup_runs_after_edit_failure(monkeypatch):
     )
 
 
-def test_strict_row_cleanup_reports_rejected_collab_delete(monkeypatch):
+@pytest.mark.asyncio
+async def test_strict_row_cleanup_reports_rejected_collab_delete(monkeypatch):
     doc = _database_doc_with_rows("row-1")
-    monkeypatch.setattr(server, "_collab_doc", lambda *args: doc)
-    monkeypatch.setattr(server, "_collab_web_update", lambda *args: None)
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda *args: doc))
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *args: None))
 
     def reject_delete(*args, **kwargs):
         raise RuntimeError("AppFlowy API 403")
 
-    monkeypatch.setattr(server, "_api_call", reject_delete)
+    monkeypatch.setattr(server, "_api_call", _async_stub(reject_delete))
 
     with pytest.raises(RuntimeError, match="403"):
-        server._delete_row_strict("ws-allowed", "db-1", "row-1")
+        (await server._delete_row_strict("ws-allowed", "db-1", "row-1"))
 
 
-def test_strict_row_cleanup_reports_unsuccessful_view_removal(monkeypatch):
+@pytest.mark.asyncio
+async def test_strict_row_cleanup_reports_unsuccessful_view_removal(monkeypatch):
     before = _database_doc_with_rows("row-1")
     authoritative = _database_doc_with_rows("row-1")
     docs = iter((before, authoritative))
-    monkeypatch.setattr(server, "_collab_doc", lambda *args: next(docs))
-    monkeypatch.setattr(server, "_collab_web_update", lambda *args: None)
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda *args: next(docs)))
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *args: None))
     delete_calls = []
     monkeypatch.setattr(
-        server, "_api_call", lambda *args, **kwargs: delete_calls.append(args)
+        server,
+        "_api_call",
+        _async_stub(lambda *args, **kwargs: delete_calls.append(args)),
     )
 
     with pytest.raises(RuntimeError, match="remained in database view order"):
-        server._delete_row_strict("ws-allowed", "db-1", "row-1")
+        (await server._delete_row_strict("ws-allowed", "db-1", "row-1"))
 
     assert delete_calls == []
 
@@ -1177,45 +1189,49 @@ def _synthetic_db_doc():
     return doc
 
 
-def test_field_update_and_delete_mutate_collab(monkeypatch):
+@pytest.mark.asyncio
+async def test_field_update_and_delete_mutate_collab(monkeypatch):
     # Exercise the real tools against a synthetic doc with the network stubbed out.
     from pycrdt import Map
 
     doc = _synthetic_db_doc()
-    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
-    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda ws, oid, ct: doc))
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *a, **k: None))
     root = doc.get("data", type=Map)["database"]
 
-    server.update_database_field("ws-allowed", "db", "F2", name="State")
+    (await server.update_database_field("ws-allowed", "db", "F2", name="State"))
     assert root["fields"]["F2"]["name"] == "State"
 
-    server.delete_database_field("ws-allowed", "db", "F2")
+    (await server.delete_database_field("ws-allowed", "db", "F2"))
     assert "F2" not in root["fields"]
     assert [o["id"] for o in list(root["views"]["V1"]["field_orders"])] == ["F1"]
     assert "F2" not in root["views"]["V1"]["field_settings"]
 
     with pytest.raises(ValueError):  # primary/title field is protected
-        server.delete_database_field("ws-allowed", "db", "F1")
+        (await server.delete_database_field("ws-allowed", "db", "F1"))
     with pytest.raises(ValueError):  # unknown field id
-        server.update_database_field("ws-allowed", "db", "NOPE", name="x")
+        (await server.update_database_field("ws-allowed", "db", "NOPE", name="x"))
 
 
-def test_select_option_add_and_delete(monkeypatch):
+@pytest.mark.asyncio
+async def test_select_option_add_and_delete(monkeypatch):
     # F2 is a SingleSelect (ty=3) with no options yet.
     import json
 
     from pycrdt import Map
 
     doc = _synthetic_db_doc()
-    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
-    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda ws, oid, ct: doc))
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *a, **k: None))
     root = doc.get("data", type=Map)["database"]
 
-    oid = server.add_select_option("ws-allowed", "db", "F2", "Blocked", color="Blue")
+    oid = await server.add_select_option(
+        "ws-allowed", "db", "F2", "Blocked", color="Blue"
+    )
     assert isinstance(oid, str) and len(oid) == 4
     assert (
-        server.add_select_option("ws-allowed", "db", "F2", "Blocked") == oid
-    )  # idempotent
+        await server.add_select_option("ws-allowed", "db", "F2", "Blocked")
+    ) == oid  # idempotent
 
     # Options persist as a JSON STRING under type_option["3"]["content"].
     data = json.loads(root["fields"]["F2"]["type_option"]["3"]["content"])
@@ -1223,29 +1239,32 @@ def test_select_option_add_and_delete(monkeypatch):
     assert data["options"][0]["color"] == "Blue"
 
     with pytest.raises(ValueError):  # bad color would wipe options in AppFlowy
-        server.add_select_option("ws-allowed", "db", "F2", "X", color="Neon")
+        (await server.add_select_option("ws-allowed", "db", "F2", "X", color="Neon"))
     with pytest.raises(ValueError):  # F1 is not a select column
-        server.add_select_option("ws-allowed", "db", "F1", "X")
+        (await server.add_select_option("ws-allowed", "db", "F1", "X"))
 
-    assert server.delete_select_option("ws-allowed", "db", "F2", "Blocked") == oid
+    assert (
+        await server.delete_select_option("ws-allowed", "db", "F2", "Blocked")
+    ) == oid
     data = json.loads(root["fields"]["F2"]["type_option"]["3"]["content"])
     assert data["options"] == []
     with pytest.raises(ValueError):  # no such option
-        server.delete_select_option("ws-allowed", "db", "F2", "ghost")
+        (await server.delete_select_option("ws-allowed", "db", "F2", "ghost"))
 
 
-def test_set_group_by(monkeypatch):
+@pytest.mark.asyncio
+async def test_set_group_by(monkeypatch):
     from pycrdt import Map
 
     doc = _synthetic_db_doc()
-    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
-    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda ws, oid, ct: doc))
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *a, **k: None))
     root = doc.get("data", type=Map)["database"]
 
-    oid = server.add_select_option(
+    oid = await server.add_select_option(
         "ws-allowed", "db", "F2", "Open"
     )  # F2 is SingleSelect
-    assert server.set_group_by("ws-allowed", "db", "V1", "F2") == "V1"
+    assert (await server.set_group_by("ws-allowed", "db", "V1", "F2")) == "V1"
 
     gs = root["views"]["V1"]["groups"][0]
     assert gs["field_id"] == "F2" and gs["ty"] == 3
@@ -1253,9 +1272,9 @@ def test_set_group_by(monkeypatch):
     assert [g["id"] for g in list(gs["groups"])] == ["F2", oid]
 
     with pytest.raises(ValueError):  # unknown view
-        server.set_group_by("ws-allowed", "db", "NOPE", "F2")
+        (await server.set_group_by("ws-allowed", "db", "NOPE", "F2"))
     with pytest.raises(ValueError):  # unknown field
-        server.set_group_by("ws-allowed", "db", "V1", "NOPE")
+        (await server.set_group_by("ws-allowed", "db", "V1", "NOPE"))
 
 
 def _synthetic_row_doc(data0="old"):
@@ -1270,16 +1289,17 @@ def _synthetic_row_doc(data0="old"):
     return doc
 
 
-def test_update_row_cells_confirms_and_creates_new_cell(monkeypatch):
+@pytest.mark.asyncio
+async def test_update_row_cells_confirms_and_creates_new_cell(monkeypatch):
     from pycrdt import Map
 
     doc = _synthetic_row_doc()
-    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
-    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
-    monkeypatch.setattr(server, "_field_types", lambda ws, db: {"F2": 3})
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda ws, oid, ct: doc))
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *a, **k: None))
+    monkeypatch.setattr(server, "_field_types", _async_stub(lambda ws, db: {"F2": 3}))
     monkeypatch.setattr(server.time, "sleep", lambda *_: None)
 
-    out = server.update_row_cells(
+    out = await server.update_row_cells(
         "ws-allowed", "db", "row1", '{"F1": "new", "F2": "opt1"}'
     )
     assert out == "row1"
@@ -1289,21 +1309,22 @@ def test_update_row_cells_confirms_and_creates_new_cell(monkeypatch):
     assert cells["F2"]["data"] == "opt1" and cells["F2"]["field_type"] == 3
 
 
-def test_update_row_cells_raises_when_write_never_confirms(monkeypatch):
+@pytest.mark.asyncio
+async def test_update_row_cells_raises_when_write_never_confirms(monkeypatch):
     from pycrdt import Map
 
     doc = _synthetic_row_doc()
-    monkeypatch.setattr(server, "_collab_doc", lambda ws, oid, ct: doc)
+    monkeypatch.setattr(server, "_collab_doc", _async_stub(lambda ws, oid, ct: doc))
 
     def revert(*a, **k):  # simulate a write that doesn't actually stick
         with doc.transaction():
             doc.get("data", type=Map)["data"]["cells"]["F1"]["data"] = "old"
 
-    monkeypatch.setattr(server, "_collab_web_update", revert)
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(revert))
     monkeypatch.setattr(server.time, "sleep", lambda *_: None)
 
     with pytest.raises(RuntimeError, match="did not confirm"):
-        server.update_row_cells("ws-allowed", "db", "row1", '{"F1": "new"}')
+        (await server.update_row_cells("ws-allowed", "db", "row1", '{"F1": "new"}'))
 
 
 def _mock_http(monkeypatch, handler):
@@ -1335,7 +1356,7 @@ def _mock_http(monkeypatch, handler):
     async def auth_headers():
         return {"Authorization": "Bearer x"}
 
-    monkeypatch.setattr(server, "get_auth_headers", sync_auth_headers)
+    monkeypatch.setattr(server, "get_auth_headers", _async_stub(sync_auth_headers))
     monkeypatch.setattr(server, "get_auth_headers_async", auth_headers)
 
 
@@ -1355,7 +1376,8 @@ _PRISTINE_HTTPX_CLIENT = _pristine_httpx_client()
 _PRISTINE_HTTPX_ASYNC_CLIENT = _pristine_httpx_async_client()
 
 
-def test_is_database_row_discriminates_row_from_document(monkeypatch):
+@pytest.mark.asyncio
+async def test_is_database_row_discriminates_row_from_document(monkeypatch):
     # append_blocks routes on this: AppFlowy's page-view payload carries `row_data`
     # for a database row and `encoded_collab` for a document.
     import httpx
@@ -1364,23 +1386,24 @@ def test_is_database_row_discriminates_row_from_document(monkeypatch):
         return httpx.Response(200, json={"data": {"data": {"row_data": {}}}})
 
     _mock_http(monkeypatch, as_row)
-    assert server._is_database_row("ws", "some-id") is True
+    assert (await server._is_database_row("ws", "some-id")) is True
 
     def as_doc(_request):
         return httpx.Response(200, json={"data": {"data": {"encoded_collab": "..."}}})
 
     _mock_http(monkeypatch, as_doc)
-    assert server._is_database_row("ws", "some-id") is False
+    assert (await server._is_database_row("ws", "some-id")) is False
 
     # Flat shape (AppFlowy has moved this key around across releases).
     def as_row_flat(_request):
         return httpx.Response(200, json={"data": {"row_data": {}}})
 
     _mock_http(monkeypatch, as_row_flat)
-    assert server._is_database_row("ws", "some-id") is True
+    assert (await server._is_database_row("ws", "some-id")) is True
 
 
-def test_is_database_row_never_raises(monkeypatch):
+@pytest.mark.asyncio
+async def test_is_database_row_never_raises(monkeypatch):
     # It only ever ADDS a fallback path, so an error must answer False and leave the
     # caller's existing behaviour untouched — never turn a probe into a failure.
     import httpx
@@ -1389,10 +1412,11 @@ def test_is_database_row_never_raises(monkeypatch):
         return httpx.Response(500, text="upstream exploded")
 
     _mock_http(monkeypatch, boom)
-    assert server._is_database_row("ws", "some-id") is False
+    assert (await server._is_database_row("ws", "some-id")) is False
 
 
-def test_append_blocks_reroutes_row_id_to_collab(monkeypatch):
+@pytest.mark.asyncio
+async def test_append_blocks_reroutes_row_id_to_collab(monkeypatch):
     # The bug: AppFlowy's REST append-block accepts only a real page-view. Handed a
     # database ROW id it returns success and writes NOTHING, so folding a checklist
     # onto a Kanban card silently lost the content.
@@ -1404,17 +1428,20 @@ def test_append_blocks_reroutes_row_id_to_collab(monkeypatch):
         return "blk1"
 
     monkeypatch.setattr(server, "_require_workspace", lambda *_: None)
-    monkeypatch.setattr(server, "_post", lambda *a, **k: "")  # the silent no-op
-    monkeypatch.setattr(server, "_is_database_row", lambda *_: True)
-    monkeypatch.setattr(server, "add_blocks", fake_add_blocks)
+    monkeypatch.setattr(
+        server, "_post", _async_stub(lambda *a, **k: "")
+    )  # the silent no-op
+    monkeypatch.setattr(server, "_is_database_row", _async_stub(lambda *_: True))
+    monkeypatch.setattr(server, "add_blocks", _async_stub(fake_add_blocks))
 
-    out = server.append_blocks("ws", "row-id", markdown="- [ ] fold me")
+    out = await server.append_blocks("ws", "row-id", markdown="- [ ] fold me")
     assert out == "blk1"  # delegated to the collab path
     assert calls["md"] == "- [ ] fold me"  # content carried across intact
     assert calls["page_id"] == "row-id"  # and aimed at the row, not the page
 
 
-def test_append_blocks_leaves_document_path_untouched(monkeypatch):
+@pytest.mark.asyncio
+async def test_append_blocks_leaves_document_path_untouched(monkeypatch):
     # Zero-regression guard: a normal page-view append must not gain an extra probe
     # or a second write just because the row fallback exists.
     seen = {"posts": 0, "probes": 0}
@@ -1428,15 +1455,18 @@ def test_append_blocks_leaves_document_path_untouched(monkeypatch):
         return True
 
     monkeypatch.setattr(server, "_require_workspace", lambda *_: None)
-    monkeypatch.setattr(server, "_post", fake_post)
-    monkeypatch.setattr(server, "_is_database_row", fake_probe)
+    monkeypatch.setattr(server, "_post", _async_stub(fake_post))
+    monkeypatch.setattr(server, "_is_database_row", _async_stub(fake_probe))
 
-    assert server.append_blocks("ws", "page-id", markdown="hello") == "ok-block-id"
+    assert (
+        await server.append_blocks("ws", "page-id", markdown="hello")
+    ) == "ok-block-id"
     assert seen["posts"] == 1  # exactly one write
     assert seen["probes"] == 0  # no extra round-trip on the happy path
 
 
-def test_api_call_actionable_error(monkeypatch):
+@pytest.mark.asyncio
+async def test_api_call_actionable_error(monkeypatch):
     # A non-2xx from AppFlowy must surface as a specific, agent-readable message
     # (not a bare traceback), with a hint about what to fix.
     import httpx
@@ -1444,27 +1474,18 @@ def test_api_call_actionable_error(monkeypatch):
     def handler(_request):
         return httpx.Response(404, text="object not found")
 
-    real_client = _PRISTINE_HTTPX_CLIENT
-    monkeypatch.setattr(
-        server.httpx,
-        "Client",
-        lambda **k: real_client(transport=httpx.MockTransport(handler)),
-    )
-
-    def auth_headers():
-        return {"Authorization": "Bearer x"}
-
-    monkeypatch.setattr(server, "get_auth_headers", auth_headers)
+    _mock_http(monkeypatch, handler)
 
     with pytest.raises(RuntimeError) as ei:
-        server._api_call("GET", "/api/workspace/x/database/y/fields")
+        (await server._api_call("GET", "/api/workspace/x/database/y/fields"))
     msg = str(ei.value)
     assert "AppFlowy API 404" in msg
     assert "database_id" in msg  # the 404 hint steers toward list_databases
     assert "object not found" in msg  # includes the server's own words
 
 
-def test_api_call_rejects_application_error_inside_http_200(monkeypatch):
+@pytest.mark.asyncio
+async def test_api_call_rejects_application_error_inside_http_200(monkeypatch):
     import httpx
 
     def handler(_request):
@@ -1478,12 +1499,13 @@ def test_api_call_rejects_application_error_inside_http_200(monkeypatch):
 
     _mock_http(monkeypatch, handler)
     with pytest.raises(RuntimeError, match="AppFlowy API code 1012") as ei:
-        server._api_call("POST", "/api/workspace/w/database/v/row", json={})
+        (await server._api_call("POST", "/api/workspace/w/database/v/row", json={}))
     assert "database_id" in str(ei.value)
     assert "permission target was not found" in str(ei.value)
 
 
-def test_api_call_accepts_success_envelope_and_empty_response(monkeypatch):
+@pytest.mark.asyncio
+async def test_api_call_accepts_success_envelope_and_empty_response(monkeypatch):
     import httpx
 
     def handler(request):
@@ -1492,14 +1514,13 @@ def test_api_call_accepts_success_envelope_and_empty_response(monkeypatch):
         return httpx.Response(204)
 
     _mock_http(monkeypatch, handler)
-    assert server._post("/api/workspace/w/database/d/row", {}) == "row-1"
+    assert (await server._post("/api/workspace/w/database/d/row", {})) == "row-1"
     assert (
-        server._api_call("POST", "/api/workspace/w/collab/d/web-update").status_code
-        == 204
-    )
+        await server._api_call("POST", "/api/workspace/w/collab/d/web-update")
+    ).status_code == 204
 
 
-def test_api_call_sync_path_works_inside_running_event_loop(monkeypatch):
+def test_api_call_works_inside_running_event_loop(monkeypatch):
     import asyncio
 
     import httpx
@@ -1510,7 +1531,7 @@ def test_api_call_sync_path_works_inside_running_event_loop(monkeypatch):
     _mock_http(monkeypatch, handler)
 
     async def run_inside_loop():
-        return server._api_call("POST", "/api/workspace/w/collab/d/web-update")
+        return await server._api_call("POST", "/api/workspace/w/collab/d/web-update")
 
     assert asyncio.run(run_inside_loop()).status_code == 204
 
@@ -1950,7 +1971,8 @@ def test_md_inline_and_set_text():
     assert ("k", {"code": True}) in diff
 
 
-def test_replace_text(monkeypatch):
+@pytest.mark.asyncio
+async def test_replace_text(monkeypatch):
     from pycrdt import Array, Doc, Map, Text
 
     doc = Doc()
@@ -1977,19 +1999,25 @@ def test_replace_text(monkeypatch):
         cmap["c2"] = Array([])
 
     monkeypatch.setattr(
-        server, "_open_document", lambda ws, pid: (doc, pid, root["document"])
+        server,
+        "_open_document",
+        _async_stub(lambda ws, pid: (doc, pid, root["document"])),
     )
-    monkeypatch.setattr(server, "_collab_web_update", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_collab_web_update", _async_stub(lambda *a, **k: None))
 
-    server.replace_text("ws-allowed", "page", "hello", "hi")
+    (await server.replace_text("ws-allowed", "page", "hello", "hi"))
     assert str(tmap["t1"]) == "hi world"
     with pytest.raises(ValueError):  # "world" is in two blocks
-        server.replace_text("ws-allowed", "page", "world", "earth")
-    server.replace_text("ws-allowed", "page", "world", "earth", replace_all=True)
+        (await server.replace_text("ws-allowed", "page", "world", "earth"))
+    (
+        await server.replace_text(
+            "ws-allowed", "page", "world", "earth", replace_all=True
+        )
+    )
     assert str(tmap["t1"]) == "hi earth"
     assert str(tmap["t2"]) == "goodbye earth"
     with pytest.raises(ValueError):  # not found
-        server.replace_text("ws-allowed", "page", "zzz", "x")
+        (await server.replace_text("ws-allowed", "page", "zzz", "x"))
 
 
 def test_callout_and_math_blocks():
@@ -2066,7 +2094,8 @@ def test_page_mention_roundtrip():
     assert rendered == "[](mention:pg123)"
 
 
-def test_is_database_row_document_with_empty_row_data(monkeypatch):
+@pytest.mark.asyncio
+async def test_is_database_row_document_with_empty_row_data(monkeypatch):
     # A real document's page-view payload carries `row_data` too (as {}), next to its
     # encoded_collab. Taking that for a row made append_blocks write everything twice.
     import httpx
@@ -2077,7 +2106,7 @@ def test_is_database_row_document_with_empty_row_data(monkeypatch):
         )
 
     _mock_http(monkeypatch, as_doc)
-    assert server._is_database_row("ws", "some-id") is False
+    assert (await server._is_database_row("ws", "some-id")) is False
 
     def as_row(_request):
         return httpx.Response(
@@ -2085,10 +2114,11 @@ def test_is_database_row_document_with_empty_row_data(monkeypatch):
         )
 
     _mock_http(monkeypatch, as_row)
-    assert server._is_database_row("ws", "some-id") is True
+    assert (await server._is_database_row("ws", "some-id")) is True
 
 
-def test_append_blocks_nested_goes_through_collab(monkeypatch):
+@pytest.mark.asyncio
+async def test_append_blocks_nested_goes_through_collab(monkeypatch):
     # AppFlowy's REST append-block reverses nested blocks (a table's rows and cells)
     # and reorders the blocks around them, so nested content takes the collab path.
     calls = {}
@@ -2101,14 +2131,24 @@ def test_append_blocks_nested_goes_through_collab(monkeypatch):
         raise AssertionError("REST append must not be used for nested blocks")
 
     monkeypatch.setattr(server, "_require_workspace", lambda *_: None)
-    monkeypatch.setattr(server, "_post", no_post)
-    monkeypatch.setattr(server, "add_blocks", fake_add_blocks)
+    monkeypatch.setattr(server, "_post", _async_stub(no_post))
+    monkeypatch.setattr(server, "add_blocks", _async_stub(fake_add_blocks))
 
     md = "Before\n\n- Parent\n  - Child\n"
-    assert server.append_blocks("ws", "page-id", markdown=md) == "b1,b2"
+    assert (await server.append_blocks("ws", "page-id", markdown=md)) == "b1,b2"
     import json
 
     assert [b["type"] for b in json.loads(calls["blocks"])] == [
         "paragraph",
         "bulleted_list",
     ]
+
+
+def _async_stub(fn):
+    async def invoke(*args, **kwargs):
+        import inspect
+
+        result = fn(*args, **kwargs)
+        return await result if inspect.isawaitable(result) else result
+
+    return invoke

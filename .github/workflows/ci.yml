@@ -40,7 +40,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt pytest
+        pip install -r requirements.txt pytest pytest-asyncio
     - name: Run tests
       run: pytest -q
 
@@ -51,7 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python: ["3.10", "3.12"]
+        python: ["3.11", "3.12"]
         include:
           - os: windows-latest
             python: "3.12"
@@ -90,6 +90,6 @@ jobs:
         cache-to: type=gha,mode=max
     - name: Test MCP from the installed container
       run: |
-        python -m pip install "mcp>=1.13,<2"
+        python -m pip install "mcp>=2.3,<3" httpx
         python scripts/smoke_mcp.py --docker-image appflowy-mcp:smoke
         python scripts/smoke_mcp.py --docker-image appflowy-mcp:smoke --transport streamable-http

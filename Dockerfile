@@ -5,6 +5,7 @@ COPY appflowy_mcp ./appflowy_mcp
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels .
 
 FROM python:3.12-slim
+LABEL io.modelcontextprotocol.server.name="io.github.Rahulk644/appflowy-mcp-server"
 WORKDIR /app
 COPY --from=builder /wheels /tmp/wheels
 RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels

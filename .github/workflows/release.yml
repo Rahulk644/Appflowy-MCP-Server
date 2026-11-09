@@ -11,6 +11,9 @@ jobs:
   verify:
     uses: ./.github/workflows/ci.yml
 
+  compatibility:
+    uses: ./.github/workflows/compatibility.yml
+
   version:
     runs-on: ubuntu-latest
     steps:
@@ -27,13 +30,17 @@ jobs:
         import pathlib
         import tomllib
         version = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+        import json
+        registry = json.loads(pathlib.Path("server.json").read_text())
+        if registry["version"] != version or not registry["packages"][0]["identifier"].endswith(":" + version):
+            raise SystemExit("server.json and pyproject.toml versions must match")
         if os.environ["RELEASE_TAG"] != f"v{version}":
             raise SystemExit("Release tag must be v followed by the package version")
         PY
 
   pypi:
     if: vars.ENABLE_PYPI_PUBLISH == 'true'
-    needs: [verify, version]
+    needs: [verify, compatibility, version]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -46,7 +53,7 @@ jobs:
     - uses: pypa/gh-action-pypi-publish@release/v1
 
   container:
-    needs: [verify, version]
+    needs: [verify, compatibility, version]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -76,3 +83,31 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+
+  registry:
+    needs: [container]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+    - uses: actions/checkout@v4
+    - uses: sigstore/cosign-installer@v3
+    - name: Download and verify MCP publisher
+      env:
+        MCP_PUBLISHER_VERSION: v1.8.8
+      run: |
+        archive=mcp-publisher_linux_amd64.tar.gz
+        base="https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION"
+        curl --fail --location --silent --show-error --output "$archive" "$base/$archive"
+        curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base/$archive.sigstore.json"
+        cosign verify-blob --bundle "$archive.sigstore.json" \
+          --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/$MCP_PUBLISHER_VERSION" \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com "$archive"
+        tar xzf "$archive" mcp-publisher
+    - name: Verify public image access
+      run: docker pull "ghcr.io/rahulk644/appflowy-mcp-server:${GITHUB_REF_NAME#v}"
+    - name: Authenticate and publish metadata
+      run: |
+        ./mcp-publisher login github-oidc
+        ./mcp-publisher publish

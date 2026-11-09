@@ -1,0 +1,108 @@
+name: AppFlowy compatibility
+
+on:
+  workflow_call:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_cloud_mutations:
+        description: Run disposable Cloud page/row mutations
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  selfhost:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - run: pip install -e '.[dev,browser]'
+    - name: Install browser for visible-content verification
+      run: python -m playwright install --with-deps chromium
+    - name: Start pinned disposable AppFlowy 0.20.5
+      run: python scripts/selfhost.py up
+    - name: Validate live persistence
+      env:
+        APPFLOWY_INTEGRATION_REPORT: compatibility-reports/selfhost-ci.json
+        APPFLOWY_BROWSER_TEST: 'true'
+      run: python scripts/selfhost.py test
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: selfhost-compatibility
+        path: compatibility-reports/selfhost-ci.json
+    - name: Remove disposable services and data
+      if: always()
+      run: python scripts/selfhost.py down
+
+  pycrdt:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['0.13.0', '0.14.1', 'latest']
+    continue-on-error: ${{ matrix.version != '0.13.0' }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install candidate decoder
+      env:
+        CANDIDATE: ${{ matrix.version }}
+      run: |
+        if [ "$CANDIDATE" = latest ]; then pip install pycrdt; else pip install "pycrdt==$CANDIDATE"; fi
+    - name: Decode and mutate captured disposable snapshots
+      run: python scripts/check_collab.py | tee pycrdt-report.json
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: pycrdt-${{ matrix.version }}
+        path: pycrdt-report.json
+
+  cloud:
+    if: github.event_name == 'workflow_dispatch' && vars.ENABLE_CLOUD_COMPATIBILITY == 'true'
+    runs-on: ubuntu-latest
+    environment: appflowy-cloud-test
+    timeout-minutes: 10
+    env:
+      APPFLOWY_BASE_URL: ${{ vars.APPFLOWY_TEST_BASE_URL || 'https://beta.appflowy.cloud' }}
+      APPFLOWY_EMAIL: ${{ secrets.APPFLOWY_TEST_EMAIL }}
+      APPFLOWY_PASSWORD: ${{ secrets.APPFLOWY_TEST_PASSWORD }}
+      APPFLOWY_ACCESS_TOKEN: ${{ secrets.APPFLOWY_TEST_ACCESS_TOKEN }}
+      APPFLOWY_COMPAT_WORKSPACE_ID: ${{ vars.APPFLOWY_TEST_WORKSPACE_ID }}
+      APPFLOWY_COMPAT_PARENT_VIEW_ID: ${{ vars.APPFLOWY_TEST_PARENT_VIEW_ID }}
+      APPFLOWY_COMPAT_DATABASE_ID: ${{ vars.APPFLOWY_TEST_DATABASE_ID }}
+      APPFLOWY_COMPAT_DEPLOYMENT_TYPE: appflowy-cloud
+      APPFLOWY_COMPAT_VERSION: current-saas
+      APPFLOWY_COMPAT_ALLOW_CI: 'true'
+      APPFLOWY_COMPAT_DISPOSABLE_WORKSPACE: 'true'
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - run: pip install -e .
+    - name: Run explicitly configured Cloud checks
+      env:
+        RUN_MUTATIONS: ${{ inputs.run_cloud_mutations }}
+      run: |
+        if [ "$RUN_MUTATIONS" = true ]; then
+          python live_compatibility.py --run-reversible --output cloud-report.json
+        else
+          python live_compatibility.py --output cloud-report.json
+        fi
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: cloud-compatibility
+        path: cloud-report.json

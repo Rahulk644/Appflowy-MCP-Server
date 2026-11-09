@@ -4,24 +4,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "appflowy-mcp-server"
-version = "0.1.0"
+version = "2.0.0"
 description = "Model Context Protocol (MCP) server for AppFlowy Cloud — read, build, and edit your workspace from AI agents."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "appflowy-mcp-server contributors" }]
-keywords = ["mcp", "model-context-protocol", "appflowy", "ai-agents", "llm", "fastmcp"]
+keywords = ["mcp", "model-context-protocol", "appflowy", "ai-agents", "llm", "async"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    # Keep these bounds in sync with requirements.txt — see the comments there for
-    # why mcp and pycrdt are pinned (2.0.0 dropped fastmcp; pycrdt 0.14.1 regressed
-    # collab decoding).
-    "mcp>=1.13,<2",
+    # Keep these bounds in sync with requirements.txt.
+    "mcp>=2.3,<3",
     "httpx",
+    "httpx2>=2.10,<3",
     "pydantic",
     "python-dotenv",
     "fastapi",
@@ -32,7 +31,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff==0.16.1", "pytest", "build", "twine"]
+dev = ["ruff==0.16.1", "pytest", "pytest-asyncio", "build", "twine"]
+browser = ["playwright>=1.50,<2"]
 
 [project.scripts]
 appflowy-mcp = "appflowy_mcp.cli:main"
@@ -50,4 +50,8 @@ packages = ["appflowy_mcp"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
