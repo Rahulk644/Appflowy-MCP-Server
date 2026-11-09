@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -52,6 +53,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
     await b._close_async_client()
     checks, created = [], []
     completed = False
+    search_token = "mcpsearch" + uuid4().hex
 
     def passed(name):
         checks.append({"name": name, "classification": "live_validated", "ok": True})
@@ -108,7 +110,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
                 workspace_id=ws,
                 command="replace",
                 id=document,
-                markdown="# Replacement\n\nVerified",
+                markdown=f"# Replacement\n\nVerified {search_token}",
                 expected_markdown=after,
             )
         )
@@ -327,16 +329,17 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         # Keyword indexing is asynchronous; only successful hits establish persistence.
         import asyncio
 
-        for _ in range(40):
+        for _ in range(120):
             search = await w.appflowy_search(
-                m.SearchInput(workspace_id=ws, query="MCP integration", limit=1)
+                m.SearchInput(workspace_id=ws, query=search_token, limit=1)
             )
             if search["items"]:
                 assert len(search["items"]) == 1
+                assert search["items"][0]["object_id"] == document
                 assert "has_more" in search
                 passed("keyword_search_pagination")
                 break
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
         else:
             pytest.fail("Keyword indexing did not return the disposable documents")
         completed = True

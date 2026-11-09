@@ -2155,21 +2155,51 @@ async def update_row_cells(
     in the UI (Tier 2 / collab). cells: JSON object {field_id: value}. Values:
     text → string; SingleSelect → the option id (see get_database_fields
     type_option options); Checkbox → "Yes"/"No"; Number/URL → string. Only the
-    given cells change. To move a Board card, set its Status field's cell.
+    DateTime → {"data": "unix-seconds", "end_timestamp": "", "include_time": true,
+    "is_range": false}; date attributes are stored beside data. Only the given
+    cells change. To move a Board card, set its Status field's cell.
     Confirms the write applied (read-after-write) before returning and retries on
     transient collab contention, so a success result means the cells actually stuck."""
     _require_workspace(workspace_id)
     updates = json.loads(cells)
+    ftypes = None
+    if any(isinstance(value, dict) for value in updates.values()):
+        ftypes = await _field_types(workspace_id, database_id)
+        for fid, value in updates.items():
+            if not isinstance(value, dict):
+                continue
+            if (
+                ftypes.get(fid) != 2
+                or not value
+                or value.keys() - {"data", "end_timestamp", "include_time", "is_range"}
+            ):
+                raise ValueError(
+                    "Cell attribute objects are supported only for DateTime fields"
+                )
+            for key, item in value.items():
+                if key in {"include_time", "is_range"}:
+                    if type(item) is not bool:
+                        raise ValueError(f"DateTime {key} must be boolean")
+                elif not isinstance(item, str) or (
+                    item and not item.removeprefix("-").isdigit()
+                ):
+                    raise ValueError(f"DateTime {key} must be a unix-seconds string")
+    patches = {
+        fid: value if isinstance(value, dict) else {"data": value}
+        for fid, value in updates.items()
+    }
 
     def confirmed(vcells) -> bool:
-        for fid, val in updates.items():
-            if fid not in vcells or "data" not in vcells[fid]:
+        for fid, patch in patches.items():
+            if fid not in vcells:
                 return False
-            if str(vcells[fid]["data"]) != str(val):
+            if any(
+                key not in vcells[fid] or vcells[fid][key] != value
+                for key, value in patch.items()
+            ):
                 return False
         return True
 
-    ftypes = None  # field types for NEW cells — loaded once, only if needed
     last = "no attempt made"
     for attempt in range(_CELL_WRITE_RETRIES):
         doc = await _collab_doc(workspace_id, row_id, _ROW_COLLAB)
@@ -2179,14 +2209,15 @@ async def update_row_cells(
         sv = doc.get_state()
         now = int(time.time())
         with doc.transaction():
-            for fid, val in updates.items():
+            for fid, patch in patches.items():
                 if fid in row_cells:
-                    row_cells[fid]["data"] = val
+                    for key, value in patch.items():
+                        row_cells[fid][key] = value
                     row_cells[fid]["last_modified"] = now
                 else:
                     row_cells[fid] = Map(
                         {
-                            "data": val,
+                            **patch,
                             "field_type": int((ftypes or {}).get(fid, 0)),
                             "created_at": now,
                             "last_modified": now,

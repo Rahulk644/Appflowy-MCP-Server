@@ -15,20 +15,22 @@ The source contracts were also checked against AppFlowy-Web commit
 |---|---|---|
 | Password login, refresh, workspace/folder | Live disposable stack | External identity providers not exercised |
 | Markdown document create/read/edit/replace | Live readback and visible browser content | Replacement precondition checks a fetched snapshot, not a server atomic compare-and-swap |
-| Typed row create/update/delete and row body | Authoritative collab readback; visible Grid row | Materialized REST row details can lag; not every field type has a typed encoder |
+| Typed row create/update/delete and row body | Authoritative collab readback; visible Grid text, Number, DateTime/range, SingleSelect and MultiSelect labels after create/update; Board card in its selected group | Materialized REST row details can lag; not every field type has a typed encoder |
 | Keyword search and bounded results | Live search hit | Requires deployed search service; semantic search not claimed |
 | Markdown tree import/export | Live persistence | Bounded text entries; no ZIP/Notion/PDF converter |
 | File payload upload/download/delete | Live byte comparison and cleanup | Small files; no multipart or rich media orchestration |
-| Formula expression and Timeline settings | Collab write/readback | Schema support; formula evaluation and full Timeline UI behavior are not certified |
-| Structured private/custom space ACL | Live write/readback | No multi-user authorization penetration test |
+| Formula expression and Timeline settings | Collab write/readback; Grid evaluates `1 + 2` to `3`; configured Timeline toolbar and row render | Complex formula references/functions, Timeline dragging and every layout setting are not covered |
+| Structured private/custom space ACL | Live write/readback as owner | Separate member/guest checks blocked by the unlicensed commercial stack's one-seat limit (`LicenseLimitHit`, 1120) |
 | MCP 2 server and input errors | Protocol contract tests plus clean-install stdio/HTTP | Desktop product UIs not individually certified |
 | Google OAuth routing and persistence | Official MCP SDK HTTP login/PKCE/refresh/replay/revocation contract and provider tests | No real Google sign-in performed in CI |
 | AI chat | Current Web contract and decoder tests | Answer generation needs an AI-enabled deployment; opt-in and experimental |
 | AppFlowy SaaS | Protected opt-in harness | No current Cloud account/workspace configured for this release |
 
 The committed JSON report in [compatibility-reports](compatibility-reports/) records
-individual live checks. Browser tests assert rendered document text and Grid cell
-text. CI artifacts carry each run's live report; failures are not labeled validated.
+individual live and browser checks. Browser assertions target the specific row and
+field, verify typed updates and date ranges, and distinguish Grid, Board and Timeline.
+CI artifacts carry each run's live/browser reports and browser failure diagnostics;
+failures are not labeled validated.
 
 ## Reproduce disposable checks
 
