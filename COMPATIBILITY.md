@@ -31,6 +31,9 @@ individual live and browser checks. Browser assertions target the specific row a
 field, verify typed updates and date ranges, and distinguish Grid, Board and Timeline.
 CI artifacts carry each run's live/browser reports and browser failure diagnostics;
 failures are not labeled validated.
+The search probe waits within a fixed retry budget for indexing and the baseline's
+explicit temporary-unavailable code (1054). Other API errors fail immediately; an
+eventual matching document hit is still required. Reports include startup retries.
 
 ## Reproduce disposable checks
 

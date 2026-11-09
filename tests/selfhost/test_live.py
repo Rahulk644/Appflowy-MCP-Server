@@ -55,6 +55,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
     checks, created = [], []
     completed = False
     search_token = "mcpsearch" + uuid4().hex
+    search_startup_retries = 0
 
     def passed(name):
         checks.append({"name": name, "classification": "live_validated", "ok": True})
@@ -349,15 +350,23 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         import asyncio
 
         for _ in range(120):
-            search = await w.appflowy_search(
-                m.SearchInput(workspace_id=ws, query=search_token, limit=1)
-            )
-            if search["items"]:
-                assert len(search["items"]) == 1
-                assert search["items"][0]["object_id"] == document
-                assert "has_more" in search
-                passed("keyword_search_pagination")
-                break
+            try:
+                search = await w.appflowy_search(
+                    m.SearchInput(workspace_id=ws, query=search_token, limit=1)
+                )
+            except RuntimeError as exc:
+                # HTTP health can precede the pinned stack's search admission.
+                # Retry only its explicit temporary-unavailable application code.
+                if not str(exc).startswith("AppFlowy API code 1054:"):
+                    raise
+                search_startup_retries += 1
+            else:
+                if search["items"]:
+                    assert len(search["items"]) == 1
+                    assert search["items"][0]["object_id"] == document
+                    assert "has_more" in search
+                    passed("keyword_search_pagination")
+                    break
             await asyncio.sleep(1)
         else:
             pytest.fail("Keyword indexing did not return the disposable documents")
@@ -400,6 +409,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             "failed": sum(not item["ok"] for item in checks),
             "ok": completed and not cleanup_failures,
             "credentials_recorded": False,
+            "search_startup_retries": search_startup_retries,
         }
         destination = Path(
             os.environ.get(
