@@ -4,7 +4,34 @@ All notable changes are documented here. The format loosely follows
 [Keep a Changelog](https://keepachangelog.com/), and versions aim to follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-11-09
+
+### Changed
+- Python 3.11+ and official MCP 2.3+ `MCPServer`; all AppFlowy network operations
+  now use async I/O. Both modern and legacy protocol connections are tested.
+- Compact default: 11 prefixed tools, 12 with experimental AI enabled; exclusive
+  legacy 34-tool profile and five-tool read-only profile. See MIGRATION.md.
+- Typed bounded batch inputs, per-item failures, guarded Markdown replacement,
+  paginated keyword search, import/export and bounded file payload uploads.
+
+### Added
+- Doctor CLI, access-token auth, Formula definition and Timeline settings support,
+  structured private/custom space permissions and clear AI opt-in.
+- Commercial 0.20.5 disposable API/browser CI and decoder-fixture version matrix;
+  protected opt-in Cloud checks. Evidence and limitations in COMPATIBILITY.md.
+- Fail-closed collab decoding errors; pycrdt 0.13.0 remains supported/pinned.
+- Installable wheel/CLI, Docker multi-architecture release and official MCP Registry
+  metadata/OIDC publication. PyPI is unconditionally disabled for this release.
+- Reproducible manifest measurements, migration table and client recipes.
+
+### Fixed
+- OAuth-only HTTP deployments now reject unauthenticated MCP requests even when
+  no shared secret is set.
+- Current database-view creation DTO and transient stale-admission rejection;
+  database creation keeps both container view and database IDs.
+
+## Earlier unreleased changes (before 2.0)
+
 
 ### Fixed
 - Prevent duplicate document appends when metadata includes empty `row_data`

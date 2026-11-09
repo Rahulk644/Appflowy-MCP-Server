@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/Rahulk644/appflowy-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Rahulk644/appflowy-mcp-server/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![MCP](https://img.shields.io/badge/MCP-server-8A2BE2.svg)](https://modelcontextprotocol.io)
 
 </div>
@@ -21,24 +21,46 @@ Not just *view* a Kanban board: create databases and pages, move cards, edit and
 
 ## ✨ Highlights
 
-- **Full CRUD, not read-only.** Create pages/databases/fields/rows, and — via a collaborative-editing (CRDT) layer — **edit, move, and delete *any* existing row or document block**, including ones made by hand in the UI.
+- **Full CRUD, not read-only.** Create pages/databases/fields/rows, and — via a collaborative-editing (CRDT) layer — **edit and delete existing rows or document blocks**, including ones made by hand in the UI.
 - **Advanced blocks the REST API can't make.** Callouts, toggles, quotes, code, columns, and more, placed programmatically.
 - **Scoped by design.** `ALLOWED_WORKSPACE_IDS` makes every tool refuse anything outside your allow-list — even if the account can see more.
-- **Three ways to connect.** Google **OAuth sign-in**, a Bearer **header** token, or a token-in-**URL link** for UIs that can't set headers. Works with Claude, Cursor, Antigravity, and any MCP client.
+- **Three ways to connect.** Google **OAuth sign-in**, a Bearer **header** token, or a token-in-**URL link** for UIs that can't set headers. Uses standard MCP stdio or HTTP; client recipes are in [examples](examples/README.md).
 - **Agent-ready.** Ships an AppFlowy "knowledge pack" as MCP server instructions **and a fetchable `appflowy://guide` resource** (see [KNOWLEDGE.md](KNOWLEDGE.md)) so agents build clean, well-formed structures.
 - **Batteries included.** stdio / Streamable-HTTP / SSE transports, Docker, tests, and CI.
 
 ## 🧰 Tools
 
-**Read** — `get_workspaces`, `get_workspace_folder`, `list_databases`, `get_database_fields`, `get_database_row_ids`, `get_database_row_details`, `get_page`, `get_page_markdown` (page/card body as Markdown), `list_updated_rows`
+The default **compact** profile exposes **11 async tools**, or **12** when
+AppFlowy AI is explicitly enabled. All names start with `appflowy_`. Parameters
+are structured JSON inside `request`; cell values never require a JSON string.
 
-**Create & structure** (plain JSON, no CRDT) — `create_page`, `create_database` (grid/board/calendar), `create_database_view`, `add_database_field`, `create_database_row`, `upsert_database_row`, `append_blocks`, `create_space`, `move_page`, `duplicate_page`, `rename_page`, `trash_page`, `restore_page`
+| Tool | Workflows |
+|---|---|
+| `appflowy_search` | Keyword search with server pagination |
+| `appflowy_fetch` | Workspaces, folder trees, page metadata/Markdown, database fields |
+| `appflowy_create_pages` | Batch documents, spaces, databases and database views |
+| `appflowy_update` | Rename, move, duplicate, trash/restore, append/prepend/replace, space permissions |
+| `appflowy_delete` | Page trash and row/block/field deletion |
+| `appflowy_database` | Fields, select options, grouping, Formula expressions, Timeline settings |
+| `appflowy_rows` | Bounded reads and typed batch create/upsert/update/delete |
+| `appflowy_blocks` | Markdown/advanced blocks, inline edits, deletion and text replacement |
+| `appflowy_import` | Markdown tree entries and bounded base64 file uploads |
+| `appflowy_export` | Bounded Markdown page/tree export |
+| `appflowy_api` | Additional REST routes within the selected workspace |
+| `appflowy_ai` *(opt-in)* | AppFlowy chat with explicit page or workspace context |
 
-**Edit & delete — any row or block** (collab/CRDT layer) — `update_row_cells` (e.g. move a Board card by setting its Status), `delete_row`, `add_block` (incl. advanced: callout / toggle / quote / code…), `edit_block_text` (renders inline Markdown), `replace_text` (find-and-replace, no block id), `delete_block`
+Example tool arguments:
 
-**Schema editing** (collab/CRDT) — `update_database_field`, `delete_database_field`, `add_select_option`, `delete_select_option`, `set_group_by` (Board grouping)
+```json
+{"request": {"command": "update_cells", "workspace_id": "WORKSPACE_ID", "database_id": "DATABASE_ID", "rows": [{"row_id": "ROW_ID", "cells": {"Name": "Updated task", "Done": true}}]}}
+```
 
-**Pages and row bodies both accept Markdown**, rendered into real blocks (headings, nested lists, interactive checkboxes, tables, code, math) — `create_page(markdown=…)`, `append_blocks(markdown=…)`, or a row's `document`. Field-type ids, the block-tree schema, and the full block palette are documented in [KNOWLEDGE.md](KNOWLEDGE.md).
+`APPFLOWY_TOOL_PROFILE=legacy` exposes the original 34 names instead. Profiles are
+exclusive; aliases do not inflate the compact manifest. `APPFLOWY_READ_ONLY=true`
+exposes five read-only tools and enforces the policy below tool routing.
+See the [migration table](MIGRATION.md), [agent guide](KNOWLEDGE.md), and
+[measured manifest sizes](benchmarks/current.json). Byte measurements do not
+establish LLM selection accuracy or a fixed token/latency saving.
 
 ## 📦 What you can build
 
@@ -50,13 +72,13 @@ Here's what this MCP creates **today** — the rest is on the roadmap below.
 | Category | Supported now | Partial / roadmap |
 |---|---|---|
 | **Text blocks** | Text, Heading 1–3, bulleted / numbered / to-do lists, quote, code, callout, toggle, divider | 🟡 simple table (GFM in Markdown) · 🗺️ link-to-page, breadcrumb |
-| **Media** | Image by URL | 🗺️ file / PDF / video / audio upload, photo gallery, web bookmark, Drive embed |
-| **Database** | Full-page Grid / Board / Calendar, extra views, Board grouping, select options | 🗺️ List / Gallery / Chart / Feed views, inline & linked views |
-| **Advanced** | Callouts (`> [!NOTE]`), block & inline equations (`$$` / `$…$`), toggle-headings (via `add_block`) | 🗺️ columns, table of contents, Mermaid |
+| **Media** | Image by URL | 🟡 Bounded binary uploads by payload; rich media workflows, galleries, bookmarks and embeds remain partial |
+| **Database** | Grid / Board / Calendar and additional layouts, Board grouping, select options, Formula definitions and Timeline settings | 🟡 Additional layouts depend on backend permissions/version; inline & linked views remain roadmap |
+| **Advanced** | Callouts (`> [!NOTE]`), block & inline equations (`$$` / `$…$`), toggle-headings (via `appflowy_blocks`) | 🗺️ columns, table of contents, Mermaid |
 | **Inline style** | Bold / italic / strike / code / link, **page @mention** (`[](mention:id)`), color (page bodies), emoji | 🗺️ underline, background color, person-mention (not in AppFlowy), date & reminder |
 | **AI blocks** | — | ⛔ AI note / transcript / summarize / ask — these run AppFlowy's own AI, not insertable content |
 
-Block-by-block detail lives in [KNOWLEDGE.md](KNOWLEDGE.md) (§9 Coverage).
+Recipes and current limits live in [KNOWLEDGE.md](KNOWLEDGE.md).
 
 ## 🏗️ How it works
 
@@ -68,7 +90,7 @@ Block-by-block detail lives in [KNOWLEDGE.md](KNOWLEDGE.md) (§9 Coverage).
                                    └─ collab/CRDT (pycrdt)  edit/move/delete any row or block, advanced blocks
 ```
 
-The server logs into AppFlowy Cloud with a **dedicated bot account** and exposes MCP tools. Most operations use the JSON REST API; surgical edits/deletes and advanced blocks go through AppFlowy's collaborative (Yjs/CRDT) layer via a merging update, so they're safe alongside live editing.
+The server logs into AppFlowy Cloud with a **dedicated bot account** and exposes MCP tools. Most operations use the JSON REST API; surgical edits/deletes and advanced blocks go through AppFlowy's collaborative (Yjs/CRDT) layer via a merging update, so concurrent updates merge. Replacement still requires a fresh read; it is not a server-side atomic compare-and-swap.
 
 ## 🚀 Quick start
 
@@ -94,6 +116,15 @@ uv run appflowy-mcp
 
 `python server.py` and `uvicorn server:app` remain supported for existing deployments.
 An installed package also supports `python -m appflowy_mcp`, `--help`, and `--version`.
+
+Check configuration without printing credentials:
+
+```bash
+appflowy-mcp doctor --env-file /absolute/path/to/.env
+appflowy-mcp doctor --check --json --env-file /absolute/path/to/.env
+```
+
+`doctor` checks configuration locally; `--check` also verifies workspace access.
 
 ### Installed HTTP server
 
@@ -125,7 +156,11 @@ they become usable after the first release has been published.
 
 | Variable | Required | Notes |
 |---|---|---|
-| `APPFLOWY_EMAIL` / `APPFLOWY_PASSWORD` | ✅ | Dedicated bot account login. |
+| `APPFLOWY_EMAIL` / `APPFLOWY_PASSWORD` | alternative | Dedicated bot account login. |
+| `APPFLOWY_ACCESS_TOKEN` | alternative | AppFlowy access token instead of email/password. |
+| `APPFLOWY_TOOL_PROFILE` | – | `compact` (default) or `legacy`. |
+| `APPFLOWY_READ_ONLY` | – | `true` disables writes and exposes five read-only tools. |
+| `APPFLOWY_ENABLE_AI` | – | `true` opts into experimental AI tools on a configured deployment. |
 | `APPFLOWY_BASE_URL` | – | Defaults to `https://beta.appflowy.cloud`. |
 | `ALLOWED_WORKSPACE_IDS` | strongly recommended | Comma-separated workspace ids the server may touch. |
 | `MCP_SECRET_TOKEN` | for network use | Shared token; `openssl rand -hex 32`. |
@@ -187,15 +222,16 @@ python -m twine check dist/*
 python scripts/check_package.py
 ```
 CI runs lint, format-check, tests, clean package installation checks on Linux
-(Python 3.10 / 3.12) and Windows (3.12), and Docker MCP checks on every push/PR.
+(Python 3.11 / 3.12) and Windows (3.12), and Docker MCP checks on every push/PR.
 Package and Docker smoke checks use dummy configuration, exercise stdio and
 Streamable HTTP, and do not log into AppFlowy. Live checks remain opt-in.
 
 ### Live compatibility validation
 
-`live_compatibility.py` is an opt-in operator harness for the v2 live-validation
-gate. It is not an MCP tool and refuses to run in CI because it requires live
-credentials.
+`live_compatibility.py` is an opt-in operator harness. Ordinary CI is refused;
+the manual protected Cloud job requires both explicit CI and disposable-workspace
+opt-ins. The disposable local suite needs no private Cloud credentials.
+See [COMPATIBILITY.md](COMPATIBILITY.md) for setup and evidence.
 
 Read-only checks:
 
@@ -232,11 +268,9 @@ private URL paths, or raw server response bodies.
 
 ## 🩺 Troubleshooting
 
-**`ModuleNotFoundError: No module named 'mcp.server.fastmcp'`** — **`mcp` 2.0.0 removed
-the `fastmcp` module** this server is built on. An unpinned install resolves 2.0.0 and
-dies at import. `requirements.txt` pins **`mcp>=1.13,<2`** — reinstall with
-`pip install -r requirements.txt` rather than `pip install -U mcp`. Porting to the 2.x
-server API is tracked separately.
+**SDK installation errors** — v2 requires Python **3.11+** and the official
+`mcp>=2.3,<3` SDK. Reinstall the project's dependencies together; this server now
+uses `MCPServer` and supports both modern and legacy protocol connections.
 
 **`KeyError: 'data'` on a database row or Board/Grid page** — fixed. AppFlowy Cloud
 moved the collab response shape (envelope or not, `encode_collab`/`encoded_collab`/top
@@ -248,46 +282,24 @@ error now names the actual keys instead of raising a bare `KeyError`.
 
 **A write looks like it didn't apply** — `get_database_row_details` reads a materialized view that can lag the live collab by minutes; the write is usually fine. `update_row_cells` confirms its own write against the collab (with retry) before returning, so its success result is trustworthy.
 
-## 🧭 How this compares
+## 🧭 Compatibility and alternatives
 
-[`LucasXu0/appflowy_mcp`](https://github.com/LucasXu0/appflowy_mcp) covers pages/folders/trash/favorites. This server adds **database write-back, full row/block edit & delete via the collab layer, workspace scoping, and OAuth** — aimed at agents that *finish* work on a board, not just read it.
+Current self-hosted 0.20.5 API and browser validation, dependency fixture results,
+and remaining gaps are recorded in [COMPATIBILITY.md](COMPATIBILITY.md).
+Cloud validation is an explicit opt-in job with a dedicated test workspace;
+self-hosted results are not a claim of SaaS certification.
 
-## 🗺️ Roadmap
+See [DISCOVERY.md](DISCOVERY.md) for a current comparison with weironz, CAREEMER,
+Cosmin-DB Toolkit and other community servers. AppFlowy also publishes native
+plugins; availability and licensing depend on the deployment.
 
-### Next: v2.0.0 — API surface redesign (breaking)
+## 🗺️ Remaining work
 
-The tool surface grew one-tool-per-endpoint to **34 tools**. That is the wrong shape: a
-large surface makes an agent load and choose among dozens of schemas on every call, and
-bare names like `get_page` collide with any other MCP loaded alongside this one.
-
-v2 consolidates to **12 command-multiplexed verbs**, all `appflowy_`-prefixed, converts
-the whole HTTP layer to **async**, and adds Pydantic input validation, pagination, and
-`response_format`. Coverage does not shrink — writes multiplex behind a `command` enum
-and `appflowy_api` remains a full passthrough.
-
-It also adds three capabilities: **AI chat** (`/api/chat/*`, with RAG over page ids),
-and bulk **Markdown import/export**.
-
-**The proposed design is in [DESIGN-v2.md](DESIGN-v2.md).** Read the
-[2026-09-22 upstream audit](UPSTREAM-AUDIT-2026-09-22.md) first: the public Cloud
-backend is archived, and several endpoint assumptions need live verification.
-
-v2.0.0 renames every tool. The migration table will ship in this README; no aliases,
-because 34 shims alongside 12 verbs would defeat the point.
-
-### Later
-
-**Content & blocks**
-- **Richer editing** — insert-at-position and search-and-replace *by content* (no block ids), plus rich inline formatting (bold / links / color) on in-place edits.
-- **Person mentions** — AppFlowy's editor has no person-mention type yet (page mentions ship via `[](mention:id)`); revisit when self-hosting adds agents as workspace members.
-- **More blocks** — columns, toggle headings, table of contents, block equation, Mermaid, link-to-page.
-- **Import files** — PDF / Word / PowerPoint / Excel / audio → Markdown → AppFlowy blocks (via [markitdown](https://github.com/microsoft/markitdown)), reusing the Markdown converter.
-- **Media** — file / PDF / image / video / audio upload, web bookmark, embeds.
-
-**Databases**
-- **More views & layouts** — List, Gallery, Chart, Feed; inline and linked database views.
-- **Filters, sorts, and field reorder** on views.
-- Pagination + filtering on large database reads.
+- Obtain a representative historical failing pycrdt snapshot before loosening the supported pin.
+- Validate AI answer generation on an AI-enabled deployment. The AI tool stays
+  outside the default manifest until an operator enables it.
+- Broaden view-specific controls, large multipart uploads and rich media workflows.
+- Publish to PyPI when requested; current distribution uses GitHub source and GHCR.
 
 ## 🤝 Contributing
 

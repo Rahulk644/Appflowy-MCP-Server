@@ -1,0 +1,80 @@
+{
+  "baseline": {
+    "profile": "legacy",
+    "tool_count": 34,
+    "schema_bytes": 30678,
+    "instructions_chars": 4510,
+    "tool_names": [
+      "get_workspaces",
+      "get_workspace_folder",
+      "get_database_fields",
+      "get_database_row_ids",
+      "get_database_row_details",
+      "create_database_row",
+      "upsert_database_row",
+      "list_updated_rows",
+      "list_databases",
+      "create_page",
+      "create_database",
+      "create_database_view",
+      "add_database_field",
+      "update_database_field",
+      "delete_database_field",
+      "add_select_option",
+      "delete_select_option",
+      "set_group_by",
+      "append_blocks",
+      "create_space",
+      "move_page",
+      "duplicate_page",
+      "trash_page",
+      "rename_page",
+      "restore_page",
+      "get_page",
+      "get_page_markdown",
+      "update_row_cells",
+      "delete_row",
+      "add_block",
+      "add_blocks",
+      "edit_block_text",
+      "replace_text",
+      "delete_block"
+    ]
+  },
+  "profiles": [
+    {
+      "profile": "legacy",
+      "tool_count": 34,
+      "schema_bytes": 30678,
+      "instructions_bytes": 4547,
+      "async_tools": 34,
+      "schema_reduction_vs_v1_percent": 0.0
+    },
+    {
+      "profile": "compact",
+      "tool_count": 11,
+      "schema_bytes": 18282,
+      "instructions_bytes": 748,
+      "async_tools": 11,
+      "schema_reduction_vs_v1_percent": 40.4
+    },
+    {
+      "profile": "compact_ai",
+      "tool_count": 12,
+      "schema_bytes": 19893,
+      "instructions_bytes": 748,
+      "async_tools": 12,
+      "schema_reduction_vs_v1_percent": 35.2
+    },
+    {
+      "profile": "read_only",
+      "tool_count": 5,
+      "schema_bytes": 5862,
+      "instructions_bytes": 748,
+      "async_tools": 5,
+      "schema_reduction_vs_v1_percent": 80.9
+    }
+  ],
+  "measurement": "UTF-8 bytes of serialized tool definitions; excludes client-specific lazy loading and tokenization",
+  "llm_selection_accuracy_measured": false
+}

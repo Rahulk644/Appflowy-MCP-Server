@@ -1,10 +1,13 @@
 # v2 design: 34 tools → 12 verbs
 
-Status: **planned, not yet implemented; API assumptions pending live validation.**
-Start from `main`; there is no active v2 branch.
+Status: **implemented in 2.0 with revisions.** The default has 11 tools; AI is
+opt-in for the twelfth. See [MIGRATION.md](MIGRATION.md) for the actual contract
+and [COMPATIBILITY.md](COMPATIBILITY.md) for live evidence and limits.
 
-This is a proposed implementation contract for v2.0.0. Revalidate its API assumptions
-against the target deployment before implementing. See the
+The sections below preserve the original proposal and historical endpoint
+research. Some routes and DTOs changed; current code follows AppFlowy-Web and
+the tested commercial 0.20.5 stack. Do not use the historical examples as a
+current API reference. See the
 [2026-09-22 upstream audit](UPSTREAM-AUDIT-2026-09-22.md).
 
 ---

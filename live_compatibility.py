@@ -15,7 +15,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -142,7 +142,7 @@ class CompatibilityRecorder:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def _sanitize_error(exc: Exception) -> dict[str, str]:
@@ -434,8 +434,7 @@ async def _run_reversible_checks(
         method="POST",
         route=server._COLLAB_WEB_UPDATE_ROUTE,
         reversible=True,
-        operation=lambda: asyncio.to_thread(
-            server.replace_text,
+        operation=lambda: server.replace_text(
             workspace_id,
             view_id,
             initial_text,
@@ -530,8 +529,7 @@ async def _run_reversible_row_check(
         method="POST",
         route=server._COLLAB_WEB_UPDATE_ROUTE,
         reversible=True,
-        operation=lambda: asyncio.to_thread(
-            server.update_row_cells,
+        operation=lambda: server.update_row_cells(
             workspace_id,
             database_id,
             row_id,
@@ -544,9 +542,7 @@ async def _run_reversible_row_check(
         route="/api/workspace/{workspace_id}/collab/{object_id}",
         destructive=True,
         reversible=True,
-        operation=lambda: asyncio.to_thread(
-            server._delete_row_strict, workspace_id, database_id, row_id
-        ),
+        operation=lambda: server._delete_row_strict(workspace_id, database_id, row_id),
     )
 
 
@@ -606,10 +602,14 @@ def _summary(checks: list[dict[str, Any]]) -> dict[str, int]:
 
 def _refuse_ci_without_explicit_opt_in() -> None:
     if any(_truthy_env(marker) for marker in CI_ENV_MARKERS):
+        if _truthy_env("APPFLOWY_COMPAT_ALLOW_CI") and _truthy_env(
+            "APPFLOWY_COMPAT_DISPOSABLE_WORKSPACE"
+        ):
+            return
         raise SystemExit(
             "Refusing to run live AppFlowy compatibility checks in CI. "
-            "Run this harness only from an operator-controlled environment with "
-            "explicitly provisioned live credentials."
+            "Use the protected manual Cloud job with both explicit CI opt-in and "
+            "a dedicated disposable workspace, or run from an operator environment."
         )
 
 

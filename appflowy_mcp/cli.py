@@ -15,6 +15,15 @@ def main() -> None:
         package_version = "development"
 
     parser = argparse.ArgumentParser(description="AppFlowy MCP server")
+    parser.add_argument(
+        "command", nargs="?", choices=("serve", "doctor"), default="serve"
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="Doctor: check the AppFlowy connection"
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Doctor: machine-readable diagnostics"
+    )
     parser.add_argument("--version", action="version", version=package_version)
     parser.add_argument(
         "--transport", choices=("stdio", "streamable-http"), default="stdio"
@@ -36,6 +45,13 @@ def main() -> None:
     if args.env_file is not None and not env_file.is_file():
         parser.error("--env-file must name an existing file")
     load_dotenv(env_file, override=False)
+
+    if args.command == "doctor":
+        from .diagnostics import diagnose, report
+
+        result = asyncio.run(diagnose(args.check))
+        report(result, args.json)
+        raise SystemExit(0 if result["ok"] else 1)
 
     if args.transport == "stdio":
         # Import after loading configuration, and leave stdout for JSON-RPC only.

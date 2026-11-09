@@ -1,0 +1,74 @@
+# Migrating to 2.0
+
+Python **3.11+** and the official **MCP 2.3+** SDK are required. The server uses
+`mcp.server.mcpserver.MCPServer`; it supports legacy and 2026-07-28 protocol
+connections. The SDK version and negotiated MCP protocol version are separate.
+
+The default profile changes to 11 prefixed async tools. Enable experimental AI
+with `APPFLOWY_ENABLE_AI=true` for the twelfth. Every compact call uses a typed
+`request` object. Unknown arguments are rejected. Cell values and settings are
+JSON objects, rather than JSON encoded inside strings.
+
+For existing MCP clients, set `APPFLOWY_TOOL_PROFILE=legacy` to retain the original
+34 tool names and schemas. All 34 implementations now use async network I/O.
+Direct Python callers must `await` functions that previously returned synchronously.
+Root `server.py` and `google_oauth.py` remain compatibility imports. Profiles are
+exclusive. Restart the server and reconnect the client after changing profiles.
+
+## Original tool mapping
+
+| Original tool | Compact equivalent inside `request` |
+|---|---|
+| `get_workspaces` | `appflowy_fetch`, `kind=workspaces` |
+| `get_workspace_folder` | `appflowy_fetch`, `kind=workspace_folder` |
+| `get_page` | `appflowy_fetch`, `kind=page`, `id=view_id` |
+| `get_page_markdown` | `appflowy_fetch`, `id=page_id`, `response_format=markdown` |
+| `get_database_fields` | `appflowy_database`, `command=fields` |
+| `list_databases` | `appflowy_database`, `command=list` |
+| `get_database_row_ids` | `appflowy_rows`, `command=list` (bounded details) |
+| `get_database_row_details` | `appflowy_rows`, `command=get`, `row_ids=[...]` |
+| `list_updated_rows` | `appflowy_rows`, `command=changed_since`, `after=...` |
+| `create_database_row` | `appflowy_rows`, `command=create`, `rows=[...]` |
+| `upsert_database_row` | `appflowy_rows`, `command=upsert`, stable `pre_hash` per row |
+| `update_row_cells` | `appflowy_rows`, `command=update_cells`, `rows=[{row_id,cells}]` |
+| `delete_row` | `appflowy_rows`, `command=delete`, `row_ids=[...]` |
+| `create_page` | `appflowy_create_pages`, `pages=[{kind:document,...}]` |
+| `create_space` | `appflowy_create_pages`, `pages=[{kind:space,permission,...}]` |
+| `create_database` | `appflowy_create_pages`, `pages=[{kind:database,...}]` |
+| `create_database_view` | `appflowy_create_pages`, `kind=database_view`; `parent_view_id` is an existing view of the database |
+| `add_database_field` | `appflowy_database`, `command=add_field` |
+| `update_database_field` | `appflowy_database`, `command=update_field` |
+| `delete_database_field` | `appflowy_database`, `command=delete_field` |
+| `add_select_option` | `appflowy_database`, `command=add_option` |
+| `delete_select_option` | `appflowy_database`, `command=delete_option` |
+| `set_group_by` | `appflowy_database`, `command=group_by` |
+| `append_blocks` | `appflowy_update`, `command=append`, `markdown=...` |
+| `move_page` | `appflowy_update`, `command=move` |
+| `duplicate_page` | `appflowy_update`, `command=duplicate`; `name` supplies the legacy suffix |
+| `trash_page` | `appflowy_update`, `command=trash`, or `appflowy_delete`, `kind=page` |
+| `restore_page` | `appflowy_update`, `command=restore` |
+| `rename_page` | `appflowy_update`, `command=rename` |
+| `add_block` | `appflowy_blocks`, `command=add`, `block_type`, `text`, structured `data` |
+| `add_blocks` | `appflowy_blocks`, `command=add`, `markdown=...` |
+| `edit_block_text` | `appflowy_blocks`, `command=edit` |
+| `replace_text` | `appflowy_blocks`, `command=replace_text` |
+| `delete_block` | `appflowy_blocks`, `command=delete` |
+
+Legacy raw block-tree strings and custom select-option colors remain available
+through the legacy profile. The compact profile favors Markdown and typed values.
+`appflowy_delete(kind=page)` moves a page to trash; it does not permanently purge it.
+New spaces default to private. Explicit structured permissions replace the legacy
+public/private boolean. Custom permissions never fall back to broader visibility.
+
+## Example
+
+```json
+{"request":{"workspace_id":"WORKSPACE_ID","database_id":"DATABASE_ID","command":"update_cells","rows":[{"row_id":"ROW_ID","cells":{"Name":"Finished","Done":true}}]}}
+```
+
+Use `APPFLOWY_READ_ONLY=true` with the compact profile for five read-only tools;
+mutation commands are absent from their schemas, and the underlying API also
+rejects writes. A configured `APPFLOWY_ACCESS_TOKEN` takes precedence over
+email/password and must be replaced by the operator when it expires.
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for validated versions and limits.

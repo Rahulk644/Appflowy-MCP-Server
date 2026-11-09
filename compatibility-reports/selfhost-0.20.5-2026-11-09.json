@@ -1,0 +1,114 @@
+{
+  "schema": "appflowy-mcp.integration-report.v1",
+  "deployment": {
+    "type": "disposable-self-hosted",
+    "version": "0.20.5",
+    "source_commit": "0796497ebe36d569734fb8eb559f28264d86605c"
+  },
+  "checks": [
+    {
+      "name": "password_login_and_token_refresh",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "workspace_and_folder",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "document_create_and_markdown",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "collab_document_edit_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "guarded_document_replacement",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "file_upload_download_and_cleanup",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "database_creation_returns_both_ids",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "typed_row_create_and_readback",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "row_document_markdown_readback",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "typed_row_update_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "bounded_row_listing",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "database_collab_decode",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "formula_expression_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "timeline_settings_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "row_delete_authoritative_cleanup",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "markdown_export",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "markdown_tree_import_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "structured_space_permissions",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "custom_space_permissions_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "keyword_search_pagination",
+      "classification": "live_validated",
+      "ok": true
+    }
+  ],
+  "passed": 20,
+  "failed": 0,
+  "ok": true,
+  "credentials_recorded": false
+}
