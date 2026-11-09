@@ -415,6 +415,7 @@ async def test_read_only_manifest_omits_mutation_commands(monkeypatch):
 @pytest.mark.parametrize("installed", [True, False])
 async def test_doctor_never_prints_credentials(monkeypatch, installed):
     from importlib.metadata import PackageNotFoundError
+
     from appflowy_mcp import diagnostics
     from appflowy_mcp.diagnostics import diagnose
 
