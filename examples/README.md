@@ -8,7 +8,7 @@ Store credentials in a private `.env`, with a dedicated bot account and
 ## Claude Desktop / Cursor stdio configuration
 
 ```json
-{"mcpServers":{"appflowy":{"command":"uvx","args":["--from","git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.0","appflowy-mcp","--env-file","/absolute/path/to/.env"]}}}
+{"mcpServers":{"appflowy":{"command":"uvx","args":["--from","git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.1","appflowy-mcp","--env-file","/absolute/path/to/.env"]}}}
 ```
 
 For a checked-out development build, use the installed `appflowy-mcp` executable
@@ -17,7 +17,7 @@ instead. Restart the client when configuration or tool profiles change.
 ## Claude Code
 
 ```bash
-claude mcp add appflowy -- uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.0 appflowy-mcp --env-file /absolute/path/to/.env
+claude mcp add appflowy -- uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.1 appflowy-mcp --env-file /absolute/path/to/.env
 ```
 
 ## Codex TOML
@@ -25,13 +25,13 @@ claude mcp add appflowy -- uvx --from git+https://github.com/Rahulk644/Appflowy-
 ```toml
 [mcp_servers.appflowy]
 command = "uvx"
-args = ["--from", "git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.0", "appflowy-mcp", "--env-file", "/absolute/path/to/.env"]
+args = ["--from", "git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.0.1", "appflowy-mcp", "--env-file", "/absolute/path/to/.env"]
 ```
 
 ## Docker stdio (after GHCR publication)
 
 ```json
-{"mcpServers":{"appflowy":{"command":"docker","args":["run","--rm","-i","--env-file","/absolute/path/to/.env","ghcr.io/rahulk644/appflowy-mcp-server:2.0.0","appflowy-mcp"]}}}
+{"mcpServers":{"appflowy":{"command":"docker","args":["run","--rm","-i","--env-file","/absolute/path/to/.env","ghcr.io/rahulk644/appflowy-mcp-server:2.0.1","appflowy-mcp"]}}}
 ```
 
 ## Remote HTTP
