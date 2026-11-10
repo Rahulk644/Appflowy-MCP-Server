@@ -27,7 +27,7 @@ See [compatibility and limitations](COMPATIBILITY.md) before choosing a deployme
 ## Quick start
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/), or Docker. The commands
-below use the published **2.1.0** release. `main` can contain unreleased fixes;
+below use the published **2.2.0** release. `main` can contain unreleased fixes;
 see [CHANGELOG.md](CHANGELOG.md).
 
 Create a private `.env` file with a dedicated AppFlowy bot account:
@@ -47,7 +47,7 @@ must be replaced when it expires. [.env.example](.env.example) lists all setting
 Run without cloning or creating a virtual environment:
 
 ```bash
-uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.1.0 \
+uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.2.0 \
   appflowy-mcp --env-file /absolute/path/to/.env
 ```
 
@@ -59,7 +59,7 @@ Example Claude Desktop/Cursor-style configuration:
     "appflowy": {
       "command": "uvx",
       "args": [
-        "--from", "git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.1.0",
+        "--from", "git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.2.0",
         "appflowy-mcp", "--env-file", "/absolute/path/to/.env"
       ]
     }
@@ -71,7 +71,7 @@ Example Claude Desktop/Cursor-style configuration:
 Check configuration and workspace access with the same launcher:
 
 ```bash
-uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.1.0 \
+uvx --from git+https://github.com/Rahulk644/Appflowy-MCP-Server@v2.2.0 \
   appflowy-mcp doctor --check --env-file /absolute/path/to/.env
 ```
 
@@ -83,18 +83,18 @@ The public image supports Linux amd64 and arm64. For stdio:
 
 ```bash
 docker run --rm -i --env-file .env \
-  ghcr.io/rahulk644/appflowy-mcp-server:2.1.0 appflowy-mcp
+  ghcr.io/rahulk644/appflowy-mcp-server:2.2.0 appflowy-mcp
 ```
 
 For HTTP, add `MCP_SECRET_TOKEN` to `.env` and run:
 
 ```bash
 docker run --rm --env-file .env -p 127.0.0.1:8000:8000 \
-  ghcr.io/rahulk644/appflowy-mcp-server:2.1.0
+  ghcr.io/rahulk644/appflowy-mcp-server:2.2.0
 ```
 
 The MCP endpoint is `/mcp/`; legacy SSE is `/sse/`. The image is listed in the
-[official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Rahulk644%2Fappflowy-mcp-server/versions/2.1.0).
+[official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.Rahulk644%2Fappflowy-mcp-server/versions/2.2.0).
 **PyPI publication is deferred.** [RELEASING.md](RELEASING.md) covers publishing.
 
 For a source-built service, configure `.env` and run `docker compose up -d --build`.

@@ -45,6 +45,9 @@ current project; temporary progress and conversation summaries do not belong her
   tree export nor repeated snapshot fetches provide atomic multi-request reads.
 - `api.py` owns AppFlowy token/client state and workspace guards. Patch the owner
   in tests; server helper aliases do not mirror mutable globals or override behavior.
+- File uploads use the API origin; `APPFLOWY_PUBLIC_URL` changes returned links
+  only. Preserve uploaded file IDs/URLs if optional image insertion fails, and
+  guide callers to inspect the page before retrying a non-idempotent insertion.
 
 ## Validation
 
