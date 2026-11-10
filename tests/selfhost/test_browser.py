@@ -52,7 +52,7 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
     monkeypatch.delenv("APPFLOWY_READ_ONLY", raising=False)
     monkeypatch.setattr(a, "BASE_URL", base)
     await a._close_async_client()
-    created = []
+    created, image = [], None
     try:
         folder = await b.get_workspace_folder(ws, 1)
         parent = next(
@@ -62,9 +62,24 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
             ws,
             parent,
             "MCP browser document",
-            markdown="# Browser proof headline\n\nRendered **rich text**",
+            markdown="# Browser proof headline\n\nRendered **rich text**\n\n| Feature | State |\n| --- | --- |\n| Native table | **Visible** |",
         )
         created.append(document)
+        uploaded = await w.appflowy_import(
+            m.ImportInput(
+                workspace_id=ws,
+                parent_view_id=document,
+                files=[
+                    m.FileEntry(
+                        name="browser-proof.png",
+                        content_base64="iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGOoCLgERAwQCgArfgZp46x16AAAAABJRU5ErkJggg==",
+                        append_image=True,
+                    )
+                ],
+            )
+        )
+        assert uploaded["ok"], uploaded
+        image = uploaded["files"][0]
         result = await w.appflowy_create_pages(
             m.CreateInput(
                 workspace_id=ws,
@@ -197,6 +212,18 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
                 await page.get_by_text(
                     "Browser proof headline", exact=True
                 ).first.wait_for(timeout=45_000)
+                table = page.locator('[data-block-type="simple_table"]')
+                await expect(table).to_be_visible()
+                await expect(
+                    table.locator('td[data-block-type="simple_table_cell"]')
+                ).to_have_count(4)
+                await expect(table).to_contain_text("Native table")
+                await expect(table.get_by_text("Visible", exact=True)).to_be_visible()
+                rendered_image = page.locator('[data-block-type="image"] img')
+                await rendered_image.scroll_into_view_if_needed()
+                # AppFlowy fetches protected file URLs into browser blob URLs.
+                await expect(rendered_image).to_be_visible()
+                await expect(rendered_image).to_have_js_property("naturalWidth", 2)
                 await page.goto(
                     f"{base}/app/{ws}/{database['view_id']}",
                     wait_until="domcontentloaded",
@@ -294,6 +321,12 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
             finally:
                 await browser.close()
     finally:
+        if image is not None:
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+                response = await client.delete(
+                    image["url"], headers=await a.get_auth_headers_async()
+                )
+                response.raise_for_status()
         for page_id in reversed(created):
             await b.trash_page(ws, page_id)
         await a._close_async_client()
@@ -306,6 +339,8 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
                     "deployment": {"cloud": "0.20.5", "web": "0.20.11"},
                     "checks": [
                         "document_rich_text",
+                        "native_markdown_table",
+                        "uploaded_image_loaded",
                         "number_create_update",
                         "datetime_create_range_update",
                         "select_labels_create_update",

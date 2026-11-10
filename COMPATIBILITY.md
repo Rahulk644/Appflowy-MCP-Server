@@ -15,10 +15,11 @@ The source contracts were also checked against AppFlowy-Web commit
 |---|---|---|
 | Password login, refresh, workspace/folder | Live disposable stack | External identity providers not exercised |
 | Markdown document create/read/edit/replace | Live readback and visible browser content | Replacement precondition checks a fetched snapshot, not a server atomic compare-and-swap |
+| Native simple tables | Markdown/collab round trips and visible Web table cells | Export normalizes a header row; widths, colors, alignment, merged cells and arbitrary nested layouts are not preserved |
 | Typed row create/update/delete and row body | Authoritative collab readback; visible Grid text, Number, DateTime/range, SingleSelect and MultiSelect labels after create/update; Board card in its selected group | Materialized REST row details can lag; not every field type has a typed encoder |
 | Keyword search and bounded results | Live search hit | Requires deployed search service; semantic search not claimed |
 | Markdown tree import/export | Live persistence; scoped subtree, tree continuation and large-document chunk reassembly checks | Complete text entries or explicit chunk-fetch warnings; no atomic archive or ZIP/Notion/PDF converter |
-| File payload upload/download/delete | Live byte comparison and cleanup | Small files; no multipart or rich media orchestration |
+| File payload upload/download/delete and optional image insertion | Live byte comparison, image-block readback, browser image loading and cleanup | Small files; no multipart/20 MB payloads or arbitrary media orchestration. A separate public origin is covered by offline request-routing tests |
 | Formula expression and Timeline settings | Collab write/readback; Grid evaluates `1 + 2` to `3`; configured Timeline toolbar and row render | Complex formula references/functions, Timeline dragging and every layout setting are not covered |
 | Structured private/custom space ACL | Live write/readback as owner | Separate member/guest checks blocked by the unlicensed commercial stack's one-seat limit (`LicenseLimitHit`, 1120) |
 | MCP 2 server and input errors | Protocol contract tests plus clean-install stdio/HTTP | Desktop product UIs not individually certified |

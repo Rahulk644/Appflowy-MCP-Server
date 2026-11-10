@@ -370,6 +370,7 @@ class ImportInput(Input):
 
 class FileEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    append_image: bool = False
     name: str = Field(min_length=1, max_length=200)
     content_base64: str = Field(min_length=1, max_length=1_400_000)
     content_type: str = Field(

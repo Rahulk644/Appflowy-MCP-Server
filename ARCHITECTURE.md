@@ -37,6 +37,13 @@ Profile bindings reuse the same async backend handlers without wrapper functions
 or duplicated operations. Compatibility entry points and async-name aliases have
 callers and remain intentional.
 
+Markdown tables become native simple-table block trees; document conversion stays
+independent of network state. File imports use the shared API session and existing
+payload bounds. `APPFLOWY_PUBLIC_URL` selects only returned browser-facing file
+links; upload requests still target `APPFLOWY_BASE_URL`. Optional image insertion
+is a separate incremental collab write. If it fails, retain the successful upload's
+identity so callers can inspect the page and recover without duplicating files.
+
 ## Profiles and annotations
 
 Registration happens once at process startup. Compact and legacy tools are never

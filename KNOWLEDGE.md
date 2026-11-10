@@ -44,6 +44,7 @@ Examples below show the `request` object; wrap it as `{"request": ...}` when cal
 | Find/replace | `appflowy_blocks` | `command:replace_text, page_id, find, replace, replace_all` |
 | Import Markdown tree | `appflowy_import` | `parent_view_id, entries:[{path,markdown}]` |
 | Small file upload | `appflowy_import` | `parent_view_id, files:[{name,content_type,content_base64}]` |
+| Upload and insert image | `appflowy_import` | Same file payload with `append_image:true`; target a document in `parent_view_id` |
 | Export page/tree | `appflowy_export` | `view_id, depth, limit, offset` |
 | Additional REST route | `appflowy_api` | `workspace_id, method, path, params, body` |
 
@@ -78,7 +79,7 @@ in a shared database column. Pass the row ID as `page_id` to body block tools.
 ## 4. Document edits
 
 Prefer Markdown: headings, paragraphs, nested lists, `- [ ]` checklists, quotes,
-code fences, dividers, links, external images, bold/italic/strike/code, math and
+code fences, dividers, GFM pipe tables, links, external images, bold/italic/strike/code, math and
 `> [!NOTE]` callouts. `[](mention:VIEW_ID)` inserts a page mention.
 
 `replace` and `prepend` require `expected_markdown` equal to a fresh read of the
@@ -96,8 +97,11 @@ For advanced blocks use `block_type` and structured `data`, for example:
 Useful data: heading `{"level":2}`, code `{"language":"python"}`, todo_list
 `{"checked":false}`, toggle_list `{"level":2}`. Code/math text stays literal;
 other block text supports inline Markdown. Legacy raw block trees remain available
-in the legacy profile. Simple tables/rich media are partial; columns, table of
-contents, Mermaid rendering and reminders are not polished workflows here.
+in the legacy profile. GFM tables create native simple tables with a header row;
+inline formatting and cell line breaks survive Markdown round trips. Markdown
+export normalizes the first row to a header and does not retain table widths,
+colors, alignment, merged cells or arbitrary nested block layouts. Columns,
+table of contents, Mermaid rendering and reminders are not polished workflows here.
 
 ## 5. Modern database and space settings
 
@@ -166,8 +170,18 @@ per entry. Inspect every per-item result, including on overall failure.
 Import entries must have relative `.md` paths, without traversal or drive names.
 Missing parent documents are created. Total Markdown per import is 200,000 chars,
 50 entries. Files are base64 payloads: at most 1,000,000 decoded bytes each,
-2,000,000 total, 10 files. File URLs require AppFlowy authorization; upload alone
-does not insert a rich media block. No tool reads paths from the server filesystem.
+2,000,000 total, 10 files. File URLs require AppFlowy authorization. Upload alone
+does not insert a block; use `append_image:true` to insert an uploaded image into
+the target document. Supply an `image/*` content type or a recognized image filename.
+Inspect `file_id`, `url` and `image_block_id` in each result. If insertion fails
+after upload, the result retains the file identity and asks you to inspect the
+page before retrying; do not upload the same bytes again blindly.
+
+Set `APPFLOWY_PUBLIC_URL` to the browser-facing AppFlowy origin when the server's
+`APPFLOWY_BASE_URL` is an internal container address. It changes returned file URLs,
+never the upload destination or authorization requirements. Both values must be
+HTTP(S) origins without credentials, paths, queries or fragments. No tool reads
+paths from the server filesystem.
 Export reads only the requested folder subtree. Its `offset` counts breadth-first
 page attempts, including unavailable pages; `limit` bounds attempts per call.
 Returned entries are complete files. Follow the tree's `next_offset` and inspect

@@ -296,6 +296,52 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             )
             removed.raise_for_status()
         passed("file_upload_download_and_cleanup")
+        table = "| MCP header | Notes |\n| --- | --- |\n| **Native table** | line one<br>line two |"
+        await w.appflowy_update(
+            m.UpdateInput(
+                workspace_id=ws, command="append", id=document, markdown=table
+            )
+        )
+        persisted_table = await b.get_page_markdown_async(ws, document)
+        assert "| MCP header | Notes |" in persisted_table
+        assert "**Native table**" in persisted_table
+        assert "line one<br>line two" in persisted_table
+        passed("native_markdown_table_persistence")
+        png = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGOoCLgERAwQCgArfgZp46x16AAAAABJRU5ErkJggg=="
+        uploaded = await w.appflowy_import(
+            m.ImportInput(
+                workspace_id=ws,
+                parent_view_id=document,
+                files=[
+                    m.FileEntry(name="proof.png", content_base64=png, append_image=True)
+                ],
+            )
+        )
+        assert uploaded["ok"], uploaded
+        image = uploaded["files"][0]
+        try:
+            _, _, persisted = await b._open_document(ws, document)
+            block = persisted["blocks"][image["image_block_id"]]
+            assert block["ty"] == "image"
+            image_data = json.loads(block["data"])
+            assert image_data["image_type"] == 2
+            assert image_data["url"] == image["url"]
+            assert f"![]({image['url']})" in await b.get_page_markdown_async(
+                ws, document
+            )
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+                response = await client.get(
+                    image["url"], headers=await a.get_auth_headers_async()
+                )
+                response.raise_for_status()
+                assert response.content == base64.b64decode(png)
+            passed("uploaded_image_block_persistence")
+        finally:
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+                response = await client.delete(
+                    image["url"], headers=await a.get_auth_headers_async()
+                )
+                response.raise_for_status()
         result = await w.appflowy_create_pages(
             m.CreateInput(
                 workspace_id=ws,
@@ -546,7 +592,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         else:
             pytest.fail("Keyword indexing did not return the disposable documents")
         completed = True
-    except Exception as exc:
+    except (Exception, pytest.fail.Exception) as exc:
         checks.append(
             {
                 "name": "lifecycle",

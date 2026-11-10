@@ -15,7 +15,7 @@ from .collab import _nid
 # with markdown-it's CommonMark parser and emit the block tree supplied to AppFlowy —
 # one Markdown content interface everywhere. Covers the basic-block palette;
 # unknown constructs fall back to a paragraph so text is never silently dropped.
-# Tables fall back to text; columns require a separate structural workflow.
+# GFM tables use native simple-table blocks; columns need a structural workflow.
 
 # dollarmath is configured with allow_digits/allow_space OFF, which is a data-loss
 # fix, not a preference. With the defaults, any prose containing two dollar AMOUNTS
@@ -62,7 +62,16 @@ def _inline_delta(node) -> list:
             if t == "text":
                 if c.content:
                     ops.append(_delta_op(c.content, attrs))
-            elif t in ("softbreak", "hardbreak"):
+            elif (
+                t in ("softbreak", "hardbreak")
+                or t == "html_inline"
+                and c.content.lower()
+                in {
+                    "<br>",
+                    "<br/>",
+                    "<br />",
+                }
+            ):
                 ops.append(_delta_op("\n", attrs))
             elif t == "code_inline":
                 ops.append(_delta_op(c.content, {**attrs, "code": True}))
@@ -189,6 +198,46 @@ def _list_item_block(li, list_type):
     return block
 
 
+def _table_block(node) -> dict:
+    """A GFM table -> AppFlowy simple_table (rows -> cells -> one paragraph each),
+    the same shape AppFlowy's own Markdown paste produces. Short rows are padded
+    so every row has the header's column count."""
+    rows = [
+        tr
+        for part in node.children
+        if part.type in ("thead", "tbody")
+        for tr in part.children
+        if tr.type == "tr"
+    ]
+    ncols = max((len(tr.children) for tr in rows), default=0)
+    out_rows = []
+    for tr in rows:
+        cells = []
+        for i in range(ncols):
+            delta = _delta_of(tr.children[i]) if i < len(tr.children) else []
+            cells.append(
+                {
+                    "type": "simple_table_cell",
+                    "data": {},
+                    "children": [
+                        {
+                            "type": "paragraph",
+                            "data": {"delta": delta or [{"insert": ""}]},
+                        }
+                    ],
+                }
+            )
+        out_rows.append({"type": "simple_table_row", "data": {}, "children": cells})
+    return {
+        "type": "simple_table",
+        "data": {
+            "enable_header_row": True,
+            "column_widths": {str(i): 200 for i in range(ncols)},
+        },
+        "children": out_rows,
+    }
+
+
 def _block_from_node(node) -> list:
     """Map one markdown-it block node -> zero or more AppFlowy blocks."""
     t = node.type
@@ -198,7 +247,7 @@ def _block_from_node(node) -> list:
     if t == "paragraph":
         url = _sole_image_url(node)
         if url:
-            return [{"type": "image", "data": {"url": url}}]
+            return [{"type": "image", "data": {"url": url, "image_type": 2}}]
         return [{"type": "paragraph", "data": {"delta": _delta_of(node)}}]
     if t == "hr":
         return [{"type": "divider", "data": {}}]
@@ -230,6 +279,8 @@ def _block_from_node(node) -> list:
                     }
                 ]
         return [{"type": "quote", "data": {"delta": delta or [{"insert": ""}]}}]
+    if t == "table":
+        return [_table_block(node)]
     if t == "bullet_list":
         return [_list_item_block(li, "bulleted_list") for li in node.children]
     if t == "ordered_list":
@@ -285,6 +336,32 @@ def _inline_md(delta) -> str:
     return "".join(out)
 
 
+def _child_ids(b, cmap):
+    ck = b.get("children", None)
+    return list(cmap[ck]) if ck is not None and ck in cmap else []
+
+
+def _render_table(b, blocks, cmap, tmap) -> list:
+    """simple_table -> GFM table lines; each cell's paragraphs joined with <br>."""
+    rows = []
+    for rid in _child_ids(b, cmap):
+        row = []
+        for cid in _child_ids(blocks[rid], cmap):
+            parts = []
+            for pid in _child_ids(blocks[cid], cmap):
+                lines, _ = _render_block(pid, blocks, cmap, tmap, 0)
+                parts.append("\n".join(lines))
+            row.append("<br>".join(parts).replace("|", "\\|").replace("\n", "<br>"))
+        rows.append(row)
+    if not rows:
+        return []
+    n = max(len(r) for r in rows)
+    rows = [r + [""] * (n - len(r)) for r in rows]
+    lines = ["| " + " | ".join(rows[0]) + " |", "|" + " --- |" * n]
+    lines += ["| " + " | ".join(r) + " |" for r in rows[1:]]
+    return lines
+
+
 def _render_block(bid, blocks, cmap, tmap, depth):
     """Return (lines, is_list_item) for a block and its (indented) children."""
     b = blocks[bid]
@@ -294,6 +371,8 @@ def _render_block(bid, blocks, cmap, tmap, depth):
     delta = tmap[ext].diff() if (ext is not None and ext in tmap) else []
     pad = "  " * depth
 
+    if ty == "simple_table":
+        return _render_table(b, blocks, cmap, tmap), None
     if ty == "code":
         raw = "".join(t for t, _ in delta)
         lines = [f"```{data.get('language', '')}", *raw.split("\n"), "```"]

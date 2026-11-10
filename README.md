@@ -107,7 +107,8 @@ Traefik labels require an existing proxy and shared Docker network. The optional
 - **Typed database edits:** resolve field names and select options, write Number,
   Checkbox and DateTime/range cells, and update existing Board cards in batches.
 - **Markdown documents:** create and edit pages or row bodies, use guarded
-  replacement, and import/export document trees with continuation cursors.
+  replacement, native simple tables, and import/export document trees with
+  continuation cursors. Upload small files and optionally insert image blocks.
 - **A compact interface:** group related operations into async workflows, with an
   exclusive legacy profile for existing integrations and a read-only profile for
   discovery.
@@ -143,7 +144,7 @@ Use the relevant document command instead; the validation error names unused fie
 | `appflowy_database` | Fields, options, grouping, Formula expressions and Timeline settings |
 | `appflowy_rows` | Bounded reads and typed batch create/upsert/update/delete |
 | `appflowy_blocks` | Markdown/advanced blocks, inline edits and text replacement |
-| `appflowy_import` | Markdown trees and small base64 file payloads |
+| `appflowy_import` | Markdown trees, small base64 files and optional image insertion |
 | `appflowy_export` | Bounded Markdown page/tree export |
 | `appflowy_api` | Additional workspace-relative REST routes |
 | `appflowy_ai` (opt-in) | Experimental AppFlowy chat with explicit context |
@@ -172,6 +173,7 @@ and [agent guide](KNOWLEDGE.md), also available as `appflowy://guide`.
 | `APPFLOWY_EMAIL` / `APPFLOWY_PASSWORD` | Dedicated account login with automatic token refresh |
 | `APPFLOWY_ACCESS_TOKEN` | Alternative AppFlowy access token; no automatic renewal |
 | `APPFLOWY_BASE_URL` | AppFlowy origin; defaults to `https://beta.appflowy.cloud` |
+| `APPFLOWY_PUBLIC_URL` | Optional browser-facing origin for returned file/image URLs; uploads still use `APPFLOWY_BASE_URL` |
 | `ALLOWED_WORKSPACE_IDS` | Comma-separated server-wide workspace allow-list |
 | `APPFLOWY_TOOL_PROFILE` | `compact` (default) or `legacy` |
 | `APPFLOWY_READ_ONLY` | Disable writes; compact read-only schemas |

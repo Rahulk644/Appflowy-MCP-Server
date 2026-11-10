@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import math
+import mimetypes
 import re
 from datetime import datetime
 from pathlib import PurePosixPath
@@ -875,7 +876,7 @@ async def appflowy_blocks(request: m.BlocksInput) -> dict:
 
 
 async def appflowy_import(request: m.ImportInput) -> dict:
-    """Import Markdown trees or upload small files from payloads, with per-item outcomes."""
+    """Import Markdown trees or small file payloads; optionally insert uploaded images."""
     ws, b = workspace(request), backend()
     paths = []
     for entry in request.entries:
@@ -898,12 +899,24 @@ async def appflowy_import(request: m.ImportInput) -> dict:
         raise ValueError("Import paths must be unique")
     if sum(len(entry.markdown) for entry in request.entries) > 200_000:
         raise ValueError("Import payload exceeds 200000 characters")
-    decoded = []
+    public_origin = a.public_file_origin() if request.files else ""
+    decoded, content_types = [], []
     for entry in request.files:
         value = base64.b64decode(entry.content_base64, validate=True)
         if len(value) > 1_000_000:
             raise ValueError("Each file is limited to 1000000 bytes")
+        if not value:
+            raise ValueError("File payload must not be empty")
+        content_type = entry.content_type
+        if entry.append_image:
+            if content_type == "application/octet-stream":
+                content_type = mimetypes.guess_type(entry.name)[0] or content_type
+            if not content_type.lower().startswith("image/"):
+                raise ValueError(
+                    "append_image requires an image content_type or a recognized image filename"
+                )
         decoded.append(value)
+        content_types.append(content_type)
     if sum(map(len, decoded)) > 2_000_000:
         raise ValueError("File payload exceeds 2000000 bytes; split the batch")
     created = {".": request.parent_view_id}
@@ -930,25 +943,63 @@ async def appflowy_import(request: m.ImportInput) -> dict:
         except (ValueError, RuntimeError) as exc:
             results.append({"path": entry.path, "ok": False, "error": str(exc)[:300]})
     uploads = []
-    for entry, value in zip(request.files, decoded, strict=True):
+    for entry, value, content_type in zip(
+        request.files, decoded, content_types, strict=True
+    ):
         try:
             response = await a._api_call_async(
                 "PUT",
                 f"/api/file_storage/{ws}/v1/blob/{request.parent_view_id}",
                 content=value,
-                headers={"Content-Type": entry.content_type},
+                headers={"Content-Type": content_type},
             )
-            file_id = response.json()["data"]["file_id"]
+            payload = response.json()
+            metadata = payload.get("data") if isinstance(payload, dict) else None
+            file_id = metadata.get("file_id") if isinstance(metadata, dict) else None
+            if not isinstance(file_id, str) or not file_id:
+                raise RuntimeError(
+                    "Upload response has no file_id; inspect target files before retrying"
+                )
+            uploaded = {
+                "ok": True,
+                "name": entry.name,
+                "file_id": file_id,
+                "url": f"{public_origin}/api/file_storage/{ws}/v1/blob/{request.parent_view_id}/{quote(file_id, safe='')}",
+            }
+            uploads.append(uploaded)
+        except (ValueError, RuntimeError) as exc:
             uploads.append(
                 {
-                    "ok": True,
+                    "ok": False,
                     "name": entry.name,
-                    "file_id": file_id,
-                    "url": f"{a.BASE_URL}/api/file_storage/{ws}/v1/blob/{request.parent_view_id}/{quote(file_id, safe='')}",
+                    "error": str(exc)[:300],
+                    "retry": "Upload may have completed; inspect target files before retrying.",
                 }
             )
-        except (ValueError, RuntimeError) as exc:
-            uploads.append({"ok": False, "name": entry.name, "error": str(exc)[:300]})
+            continue
+        if entry.append_image:
+            try:
+                uploaded["image_block_id"] = await b.add_block(
+                    ws,
+                    request.parent_view_id,
+                    "image",
+                    data=json.dumps(
+                        {
+                            "url": uploaded["url"],
+                            "image_type": 2,
+                            "name": entry.name,
+                            "source": "upload",
+                        }
+                    ),
+                )
+            except (ValueError, RuntimeError) as exc:
+                uploaded.update(
+                    ok=False,
+                    uploaded=True,
+                    image_insertion_confirmed=False,
+                    error=str(exc)[:300],
+                    retry="File uploaded; inspect the page before retrying image insertion. Do not upload again.",
+                )
     return bounded(
         {
             "ok": all(item["ok"] for item in results + uploads),

@@ -1,10 +1,17 @@
 # Changelog
 
-## Unreleased
+## 2.2.0 — 2026-11-10
 
+- Convert GFM tables to native AppFlowy simple tables and render table cells back
+  to Markdown, preserving inline formatting and line breaks.
+- Add optional uploaded-image insertion through the existing bounded import tool
+  and `APPFLOWY_PUBLIC_URL` for browser-facing file links. Preserve uploaded file
+  identities when image insertion cannot be confirmed; keep existing payload limits.
 - Add an operator-only GoTrue refresh check with exact-token readback, short-expiry
   coverage and sanitized diagnostics, adapting contribution #15 to the shared API
   owner. Keep refresh and reversible modes separate and close the client on exit.
+- Count pytest assertion failures in disposable compatibility reports, so a failed
+  lifecycle cannot report zero failures.
 
 ## 2.1.0 — 2026-11-10
 
