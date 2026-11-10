@@ -76,3 +76,26 @@ backend/Web versions, expected behavior and a minimal reproduction. Redact token
 passwords, emails and private workspace content. Feature requests should describe
 the user task and acceptance criteria. Report vulnerabilities privately through
 [SECURITY.md](SECURITY.md).
+
+## Repository presentation
+
+Keep the repository About description, topics, package/registry metadata and README
+aligned around the same product: an independent AppFlowy MCP server for Markdown
+and typed database workflows. Describe implemented behavior and link compatibility
+evidence. Avoid deployment certifications, client endorsements, ranking claims or
+cost/accuracy promises that have not been measured.
+
+Use this About description:
+
+> Open-source AppFlowy MCP server for Claude, Cursor and Codex. Edit Markdown,
+> manage typed database rows, search and import/export. Async Python, Docker/uvx,
+> stdio + HTTP.
+
+Use the topics `appflowy`, `mcp`, `mcp-server`, `model-context-protocol`, `python`,
+`asyncio`, `docker`, `markdown`, `self-hosted`, `ai-agents`, `claude`, `cursor`,
+and `codex`. Remove obsolete implementation topics such as `fastmcp`.
+
+[assets/social-preview.jpg](assets/social-preview.jpg) is the light social preview
+and README banner. It is a 2:1 JPEG below GitHub's 1 MB upload limit. Repository
+About/topics and the custom social-preview upload require repository settings
+permission; committing a banner does not change GitHub's configured preview.

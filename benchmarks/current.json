@@ -53,15 +53,15 @@
     {
       "profile": "compact",
       "tool_count": 11,
-      "schema_bytes": 19119,
+      "schema_bytes": 19135,
       "instructions_bytes": 757,
       "async_tools": 11,
-      "schema_reduction_vs_v1_percent": 37.7
+      "schema_reduction_vs_v1_percent": 37.6
     },
     {
       "profile": "compact_ai",
       "tool_count": 12,
-      "schema_bytes": 20731,
+      "schema_bytes": 20747,
       "instructions_bytes": 757,
       "async_tools": 12,
       "schema_reduction_vs_v1_percent": 32.4

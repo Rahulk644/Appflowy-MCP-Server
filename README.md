@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/social-preview.png" alt="AppFlowy MCP Server" width="840">
+  <img src="assets/social-preview.jpg" alt="AppFlowy MCP Server — documents, typed database rows and Markdown workflows for AI agents" width="840">
 </p>
 
 # AppFlowy MCP Server
@@ -8,18 +8,41 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 
-Connect MCP clients to AppFlowy documents, databases and rows. The server provides
-Markdown editing, typed batch row operations, search, import/export and database
-schema changes through AppFlowy's REST and collaboration APIs.
+An open-source **AppFlowy MCP server** (Model Context Protocol) for connecting
+**Claude, Cursor, Codex and other MCP clients** to your AppFlowy workspace. Give AI
+agents tools to edit Markdown documents, update typed database rows and Board
+cards, search pages, and import or export Markdown trees.
+
+Run locally with `uvx` or Docker, or serve authenticated Streamable HTTP. The
+compact profile exposes **11 async workflow tools** with typed inputs, bounded
+responses and explicit results for partial batch failures.
 
 Independent community project; not affiliated with or endorsed by AppFlowy.
 The tested self-hosted baseline is Cloud **0.20.5** with Web **0.20.11**.
 See [compatibility and limitations](COMPATIBILITY.md) before choosing a deployment.
 
-Comments on cards, documents and published pages support reading and appending,
-including replies. Use `appflowy_fetch(kind="comments")` and
-`appflowy_update(command="append_comment")`; set `target_type="row"` for cards.
-The legacy profile exposes `list_comments` and `append_comment`.
+## Built for AppFlowy workflows
+
+- **Typed database edits:** resolve field names and select options, write Number,
+  Checkbox and DateTime/range cells, and update existing Board cards in batches.
+- **Markdown documents:** create and edit pages or row bodies, use guarded
+  replacement, and import/export document trees with continuation cursors.
+- **A compact interface:** group related operations into async workflows, with an
+  exclusive legacy profile for existing integrations and a read-only profile for
+  discovery.
+- **Deployment choice:** published amd64/arm64 Docker images, a Git-based `uvx`
+  command, local stdio and authenticated HTTP. No source checkout is required.
+- **Tested self-hosted baseline:** disposable AppFlowy integration checks and browser
+  assertions for typed Grid cells, Board grouping, Formula and Timeline rendering.
+  Exact versions and validation limits are in [COMPATIBILITY.md](COMPATIBILITY.md).
+
+| Task for your AI assistant | Relevant workflow |
+|---|---|
+| Find a project brief and append a meeting checklist | Search, fetch and Markdown update |
+| Move an existing Board card to Done | Resolve the Status field, then update that row's cells |
+| Build a tracker with dates and select fields | Create a database, configure fields and create typed rows |
+| Read a card conversation and reply | Fetch comments by row ID, then append a reply |
+| Export a project subtree as Markdown | Export complete files and follow returned continuations |
 
 ## Quick start
 
@@ -110,9 +133,9 @@ Use the relevant document command instead; the validation error names unused fie
 | Tool | Purpose |
 |---|---|
 | `appflowy_search` | Keyword search with server pagination |
-| `appflowy_fetch` | Workspaces, folders, page metadata/Markdown and database fields |
+| `appflowy_fetch` | Workspaces, folders, page metadata/Markdown, database fields and comments |
 | `appflowy_create_pages` | Batch documents, spaces, databases and database views |
-| `appflowy_update` | Rename, move, duplicate, trash/restore, Markdown edits and space permissions |
+| `appflowy_update` | Page operations, Markdown edits, comment appends and space permissions |
 | `appflowy_delete` | Page trash; row, block and field deletion |
 | `appflowy_database` | Fields, options, grouping, Formula expressions and Timeline settings |
 | `appflowy_rows` | Bounded reads and typed batch create/upsert/update/delete |
@@ -132,7 +155,8 @@ character offsets and a content hash; folder reads can target an `id`. Tree expo
 returns complete files, a tree cursor, and fetch instructions for oversized documents.
 See the [continuation contract](KNOWLEDGE.md#6-bounds-importexport-and-partial-outcomes).
 
-`APPFLOWY_TOOL_PROFILE=legacy` exposes the original 34 tool names plus two comment tools.
+`APPFLOWY_TOOL_PROFILE=legacy` exposes 36 tools: the original 34 names plus two
+comment tools.
 `APPFLOWY_READ_ONLY=true` exposes five read-only tools in compact mode and rejects
 API mutations. Profiles are exclusive. Read the [migration table](MIGRATION.md)
 and [agent guide](KNOWLEDGE.md), also available as `appflowy://guide`.
@@ -174,6 +198,49 @@ All HTTP users act through the same AppFlowy account and server-wide workspace
 policy. OAuth identifies clients; it does not grant each client a separate
 AppFlowy role or page-subtree scope. Protect remote HTTP with authentication and
 HTTPS. See [SECURITY.md](SECURITY.md).
+
+## Frequently asked questions
+
+### What is an AppFlowy MCP server?
+
+An AppFlowy MCP server translates requests from an MCP client into AppFlowy
+operations. This community server uses AppFlowy's REST and collaboration APIs to
+read and edit documents, database schemas, rows and blocks. It is MIT licensed
+and is not an official AppFlowy product.
+
+### Can I connect Claude, Cursor or Codex?
+
+Yes, through their MCP configuration. Use local stdio for a client-launched
+process or Streamable HTTP for a running service. Copy the
+[client-specific recipes](examples/README.md). Automated checks cover the MCP
+protocol and packaged server; individual desktop interfaces are not certified.
+
+### Does it work with self-hosted AppFlowy?
+
+The disposable CI baseline is AppFlowy Cloud **0.20.5** with Web **0.20.11** from
+the first-party commercial self-host stack. `APPFLOWY_BASE_URL` selects the origin.
+The default origin is AppFlowy SaaS; current SaaS behavior still needs a dedicated
+live validation run. See [deployment evidence](COMPATIBILITY.md).
+
+### Can I install it without cloning the repository?
+
+Yes. Use the [Git-based `uvx` command](#local-mcp-client-stdio) or the public
+[Docker image](#docker). GitHub Releases also provide wheel/source assets. PyPI
+publication is deferred; the setup commands do not depend on a PyPI publication.
+
+### Can an assistant read and reply to AppFlowy comments?
+
+Yes. Use `appflowy_fetch(kind="comments")` to read document, card-row or published
+page comments, and `appflowy_update(command="append_comment")` to append or reply.
+Comments use the bot identity. Read back after an uncertain result before retrying;
+see the [comment recipes and limits](KNOWLEDGE.md#9-comments).
+
+### Can I give an assistant read-only access?
+
+Set `APPFLOWY_READ_ONLY=true` to expose five read-only compact tools and reject
+API mutations. `ALLOWED_WORKSPACE_IDS` restricts workspaces for the whole server.
+All approved HTTP clients use the configured bot account; OAuth does not give
+each client a separate AppFlowy identity. See [SECURITY.md](SECURITY.md).
 
 ## Limits and development
 

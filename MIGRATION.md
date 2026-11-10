@@ -121,3 +121,16 @@ and `next_offset`. Concatenate chunks only when hashes agree. Folder fetches acc
 an optional subtree `id`. Export adds a breadth-first attempt `offset`, returns
 complete files, and supplies a separate Markdown-fetch request for oversized files.
 Tree and document continuations operate on live reads; restart if content changes.
+
+## Upgrading from 2.0.2 to 2.1.0
+
+Compact mode keeps the same 11 tool names. Fetch gains `kind=comments` and update
+gains `command=append_comment`; both use `target_type=document|row|published`.
+Use a card's row ID for row comments. Bodies are bounded to 100,000 characters,
+and non-default inputs unrelated to the operation remain rejected.
+
+Legacy mode has 36 tools: the original 34 plus `list_comments` and
+`append_comment`. Restart/reconnect clients to refresh their tool schemas.
+Comments act through the configured bot account. Appends are non-idempotent;
+if a result is uncertain or an older document endpoint returns no ID, read the
+conversation before retrying. Published-page targets must already be published.

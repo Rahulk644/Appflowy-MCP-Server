@@ -373,7 +373,7 @@ async def rewrite_document(
 
 
 async def appflowy_update(request: m.UpdateInput) -> dict:
-    """Rename, move, duplicate, trash/restore or edit a page; set space permissions."""
+    """Rename, move, duplicate, trash/restore or edit pages; append comments; set space permissions."""
     ws, b, target = workspace(request), backend(), request.id
     command = request.command
     if command == "append_comment":

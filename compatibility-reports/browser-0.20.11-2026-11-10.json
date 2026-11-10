@@ -17,9 +17,9 @@
   "ok": true,
   "credentials_recorded": false,
   "evidence": {
-    "source_commit": "fdeed81666f24ef472012af0f8dcd50cb29fb325",
-    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/42602750316",
+    "source_commit": "1413025e2b51910efecebfaed5cf5df5209419b0",
+    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/42791543050",
     "artifact": "selfhost-compatibility",
-    "artifact_sha256": "eac44978765a6fa08933ffb891c6f864f55296cfa2a1d12b9f3f4eaeab811157"
+    "artifact_sha256": "0fdad7ff651c44ef4be39a16a3ac154ca09092f2b0a9101bce0853f9db935561"
   }
 }

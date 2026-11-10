@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Rahulk644/appflowy-mcp-server",
-  "title": "AppFlowy Workspace MCP",
-  "description": "Edit AppFlowy documents and typed rows, search workspaces, and import/export Markdown.",
+  "title": "AppFlowy MCP Server",
+  "description": "AppFlowy MCP server: edit Markdown, manage typed database rows, search and import/export.",
   "repository": {
     "url": "https://github.com/Rahulk644/Appflowy-MCP-Server",
     "source": "github"
