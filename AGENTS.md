@@ -14,7 +14,7 @@ current project; temporary progress and conversation summaries do not belong her
 ## Project invariants
 
 - Python 3.11+, official MCP 2.3+ `MCPServer`, native async network I/O.
-- Compact: 11 tools, 12 only with experimental AI enabled. Legacy: 34 separate
+- Compact: 11 tools, 12 only with experimental AI enabled. Legacy: 36 separate
   names. Read-only compact: five tools. Never register aliases alongside compact.
 - `ALLOWED_WORKSPACE_IDS` is server-wide. Approved HTTP users share the bot's
   AppFlowy identity; do not claim per-client page scopes or AppFlowy user roles.

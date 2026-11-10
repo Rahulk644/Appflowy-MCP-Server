@@ -16,6 +16,11 @@ Independent community project; not affiliated with or endorsed by AppFlowy.
 The tested self-hosted baseline is Cloud **0.20.5** with Web **0.20.11**.
 See [compatibility and limitations](COMPATIBILITY.md) before choosing a deployment.
 
+Comments on cards, documents and published pages support reading and appending,
+including replies. Use `appflowy_fetch(kind="comments")` and
+`appflowy_update(command="append_comment")`; set `target_type="row"` for cards.
+The legacy profile exposes `list_comments` and `append_comment`.
+
 ## Quick start
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/), or Docker. The commands
@@ -127,7 +132,7 @@ character offsets and a content hash; folder reads can target an `id`. Tree expo
 returns complete files, a tree cursor, and fetch instructions for oversized documents.
 See the [continuation contract](KNOWLEDGE.md#6-bounds-importexport-and-partial-outcomes).
 
-`APPFLOWY_TOOL_PROFILE=legacy` exposes the original 34 tool names instead.
+`APPFLOWY_TOOL_PROFILE=legacy` exposes the original 34 tool names plus two comment tools.
 `APPFLOWY_READ_ONLY=true` exposes five read-only tools in compact mode and rejects
 API mutations. Profiles are exclusive. Read the [migration table](MIGRATION.md)
 and [agent guide](KNOWLEDGE.md), also available as `appflowy://guide`.

@@ -16,12 +16,14 @@ import logging
 import os
 import re
 import time
+import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
 from typing import Annotated, Literal
 
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from mcp.server.mcpserver import MCPServer
@@ -497,6 +499,233 @@ async def list_updated_rows(
     path = f"/api/workspace/{workspace_id}/database/{database_id}/row/updated"
     params = {"after": after} if after else {}
     return (await a._api_call("GET", path, params=params)).json().get("data", [])
+
+
+# ---- Comments ------------------------------------------------------------
+
+CommentTarget = Literal["document", "published", "row"]
+_COMMENT_DEVICE_ID = str(uuid.uuid4())
+
+
+async def _comment_target(workspace_id: str, target_id: str, target_type: str) -> str:
+    a._require_workspace(workspace_id)
+    if target_type not in ("document", "published", "row"):
+        raise ValueError("target_type must be document, published, or row")
+    for value in (workspace_id, target_id):
+        if not re.fullmatch("[A-Za-z0-9_-]+", value):
+            raise ValueError("workspace_id and target_id must be resource IDs")
+    if target_type == "published":
+        # Public routes omit the workspace; verify scoped access first.
+        await a._api_call("GET", f"/api/workspace/{workspace_id}/page-view/{target_id}")
+        return f"/api/workspace/published-info/{target_id}/comment"
+    return f"/api/workspace/{workspace_id}/document/{target_id}/inline-comment"
+
+
+def _row_comments(doc: Doc) -> list[dict]:
+    comments = doc.get("data", type=Map).get("comment")
+    result = []
+    for value in comments.values() if comments is not None else []:
+        item = value.to_py()
+        item["comment_id"] = item.pop("id")
+        item["reply_comment_id"] = item.pop("parent_comment_id", "") or None
+        item["author_id"] = str(item.get("author_id", ""))
+        for key, default in (("reactions", {}), ("attachments", [])):
+            try:
+                item[key] = json.loads(item.get(key, ""))
+            except (TypeError, ValueError):
+                item[key] = default
+        result.append(item)
+    return sorted(result, key=lambda c: (c.get("created_at", 0), c["comment_id"]))
+
+
+async def list_comments(
+    workspace_id: str,
+    target_id: str,
+    target_type: CommentTarget,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """Lists comments and replies, including resolved threads. target_type:
+    document = document view ID; published = published view ID; row = card ROW ID
+    (not its body document). Returns comments, has_more, next_offset; pass the
+    next_offset to continue. limit: 1–100. Row author_id is a user UUID (older
+    comments may use numeric user IDs); row timestamps are Unix seconds."""
+    if not 1 <= limit <= 100 or offset < 0:
+        raise ValueError("limit must be 1–100 and offset must be nonnegative")
+    path = await _comment_target(workspace_id, target_id, target_type)
+    if target_type == "document":
+        return (
+            await a._api_call("GET", path, params={"limit": limit, "offset": offset})
+        ).json()["data"]
+    if target_type == "row":
+        comments = _row_comments(await _collab_doc(workspace_id, target_id, 4))
+    else:
+        comments = (await a._api_call("GET", path)).json()["data"]["comments"]
+    end = offset + limit
+    return {
+        "comments": comments[offset:end],
+        "has_more": end < len(comments),
+        "next_offset": end if end < len(comments) else None,
+    }
+
+
+async def _append_row_comment(
+    workspace_id: str, row_id: str, content: str, reply_id: str, database_view_id: str
+) -> dict:
+    if database_view_id:
+        if not re.fullmatch("[A-Za-z0-9_-]+", database_view_id):
+            raise ValueError("database_view_id must be a resource ID")
+        await a._api_call(
+            "GET", f"/api/workspace/{workspace_id}/page-view/{database_view_id}"
+        )
+    doc = await _collab_doc(workspace_id, row_id, 4)
+    root = doc.get("data", type=Map)
+    existing = _row_comments(doc)
+    if reply_id:
+        parent = next((c for c in existing if c["comment_id"] == reply_id), None)
+        if parent is None:
+            raise ValueError("reply_comment_id was not found in this row")
+        # AppFlowy renders one reply level; join the original thread.
+        reply_id = parent["reply_comment_id"] or reply_id
+    profile = (await a._api_call("GET", "/api/user/profile")).json()["data"]
+    author = profile.get("uuid")
+    if not author:
+        raise RuntimeError("AppFlowy user profile has no UUID for comment attribution")
+    comment_id = str(uuid.uuid4())
+    now = int(time.time())
+    state = doc.get_state()
+    with doc.transaction():
+        if "comment" not in root:
+            root["comment"] = Map()
+        root["comment"][comment_id] = Map(
+            {
+                "id": comment_id,
+                "parent_comment_id": reply_id,
+                "content": content,
+                "author_id": author,
+                "created_at": now,
+                "updated_at": now,
+                "is_resolved": False,
+                "resolved_by": "",
+                "resolved_at": 0,
+                "reactions": "{}",
+                "attachments": "[]",
+            }
+        )
+    try:
+        await _collab_web_update(workspace_id, row_id, doc, state, 4)
+        for attempt in range(3):
+            saved = _row_comments(await _collab_doc(workspace_id, row_id, 4))
+            if any(c["comment_id"] == comment_id for c in saved):
+                break
+            if attempt < 2:
+                await asyncio.sleep(0.2 * (attempt + 1))
+        else:
+            raise RuntimeError("comment did not confirm on read-back")
+    except RuntimeError as error:
+        raise RuntimeError(
+            f"{error}. Check list_comments for comment_id={comment_id} before retrying; the comment may already be saved."
+        ) from error
+    result = {"comment_id": comment_id}
+    participants = sorted(
+        {
+            c["author_id"]
+            for c in existing
+            if reply_id
+            and (c["comment_id"] == reply_id or c["reply_comment_id"] == reply_id)
+            and (c.get("author_id") != author)
+            and _is_uuid(c.get("author_id", ""))
+        }
+    )
+    mentions = sorted(
+        {
+            u
+            for u in re.findall("@\\[[^\\]\\n]+\\]\\(([^)\\s]+)\\)", content)
+            if _is_uuid(u)
+        }
+    )
+    if participants or mentions:
+        if not database_view_id:
+            result["warning"] = (
+                "Comment saved; database_view_id is needed for notifications."
+            )
+        else:
+            try:
+                await a._post(
+                    f"/api/workspace/{workspace_id}/database/{database_view_id}/row/{row_id}/comment/notification",
+                    {
+                        "comment_id": comment_id,
+                        "content": content[:2000],
+                        "parent_comment_id": reply_id or None,
+                        "mentioned_user_uuids": mentions,
+                        "reply_participant_uuids": participants,
+                    },
+                )
+            except RuntimeError:
+                result["warning"] = (
+                    "Comment saved, but notification failed; do not repost."
+                )
+    return result
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except ValueError:
+        return False
+
+
+async def append_comment(
+    workspace_id: str,
+    target_id: str,
+    target_type: CommentTarget,
+    content: str,
+    reply_comment_id: str = "",
+    block_id: str = "",
+    database_view_id: str = "",
+) -> dict:
+    """Adds a comment or reply as the signed-in account. Targets match list_comments.
+    content is comment text, not page blocks. block_id optionally attaches a
+    document comment to a block; highlighted-text anchors are not supported.
+    For rows, supply database_view_id (Board/Grid view, NOT database ID) to send
+    reply/mention notifications. Returns comment_id (null on older REST APIs).
+    Non-idempotent: after a timeout, list comments before retrying."""
+    if not content.strip():
+        raise ValueError("content must not be empty")
+    if block_id and target_type != "document":
+        raise ValueError("block_id is only supported for document comments")
+    if database_view_id and target_type != "row":
+        raise ValueError("database_view_id is only supported for row comments")
+    path = await _comment_target(workspace_id, target_id, target_type)
+    if target_type == "row":
+        return await _append_row_comment(
+            workspace_id, target_id, content, reply_comment_id, database_view_id
+        )
+    payload = {"content": content}
+    if reply_comment_id:
+        payload["reply_comment_id"] = reply_comment_id
+    if target_type == "published":
+        await a._api_call("POST", path, json=payload)
+        return {"comment_id": None}
+    payload["mentioned_user_uuids"] = []
+    if block_id:
+        payload["block_id"] = block_id
+    headers = {"device-id": _COMMENT_DEVICE_ID}
+    try:
+        response = await a._api_call(
+            "POST", f"{path}/v2", json=payload, headers=headers
+        )
+        return {"comment_id": response.json()["data"]["comment_id"]}
+    except RuntimeError as error:
+        cause = error.__cause__
+        if not isinstance(
+            cause, httpx.HTTPStatusError
+        ) or cause.response.status_code not in (404, 405):
+            raise
+    # Never replay ambiguous writes after timeouts, 5xx or application errors.
+    await a._api_call("POST", path, json=payload, headers=headers)
+    return {"comment_id": None}
 
 
 # ---- Structure & document tools (create/manage pages, databases, blocks) ----

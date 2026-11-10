@@ -51,10 +51,17 @@ class FetchInput(ReadInput):
     offset: int = Field(default=0, ge=0)
     id: str = "self"
     kind: Literal[
-        "auto", "self", "workspaces", "workspace_folder", "database_fields", "page"
+        "auto",
+        "self",
+        "workspaces",
+        "workspace_folder",
+        "database_fields",
+        "page",
+        "comments",
     ] = "auto"
     database_id: str = ""
     depth: int = Field(default=1, ge=0, le=5)
+    target_type: Literal["document", "published", "row"] = "document"
 
     @model_validator(mode="after")
     def applicable_fields(self):
@@ -72,6 +79,7 @@ class FetchInput(ReadInput):
             kind,
             "kind "
             + {
+                "comments": "workspace_id id target_type limit offset response_format",
                 "self": "limit offset",
                 "workspaces": "limit offset",
                 "workspace_folder": "workspace_id id depth",
@@ -171,6 +179,7 @@ class UpdateInput(Input):
         "prepend",
         "replace",
         "space_permissions",
+        "append_comment",
     ]
     id: Identifier
     name: str = Field(default="", max_length=200)
@@ -179,11 +188,18 @@ class UpdateInput(Input):
     permission: SpacePermission | None = None
     expected_markdown: Markdown | None = None
 
+    target_type: Literal["document", "published", "row"] = "document"
+    content: str = ""
+    reply_comment_id: str = ""
+    block_id: str = ""
+    database_view_id: str = ""
+
     @model_validator(mode="after")
     def applicable_fields(self):
         _command_fields(
             self,
             {
+                "append_comment": "id target_type content reply_comment_id block_id database_view_id",
                 "rename": "id name",
                 "move": "id parent_view_id",
                 "duplicate": "id name",
