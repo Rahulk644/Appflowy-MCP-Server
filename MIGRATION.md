@@ -140,6 +140,6 @@ conversation before retrying. Published-page targets must already be published.
 GFM pipe tables now create native simple tables. Existing Markdown and file-import
 calls remain valid. Add `append_image:true` to an `appflowy_import` file entry to
 insert the uploaded image into the target document. The 1 MB per-file, 2 MB batch
-and ten-file limits still apply. This uses the existing compact tool; there is no
-additional `upload_file` alias. See [the import contract](KNOWLEDGE.md#6-bounds-importexport-and-partial-outcomes)
+and ten-file limits still apply. This extends the existing compact import tool.
+See [the import contract](KNOWLEDGE.md#6-bounds-importexport-and-partial-outcomes)
 for public origins and recovery after partial success.

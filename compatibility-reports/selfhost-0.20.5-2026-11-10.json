@@ -12,6 +12,11 @@
       "ok": true
     },
     {
+      "name": "operator_refresh_exact_token_readback",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
       "name": "workspace_and_folder",
       "classification": "live_validated",
       "ok": true
@@ -58,6 +63,16 @@
     },
     {
       "name": "file_upload_download_and_cleanup",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "native_markdown_table_persistence",
+      "classification": "live_validated",
+      "ok": true
+    },
+    {
+      "name": "uploaded_image_block_persistence",
       "classification": "live_validated",
       "ok": true
     },
@@ -147,15 +162,15 @@
       "ok": true
     }
   ],
-  "passed": 28,
+  "passed": 31,
   "failed": 0,
   "ok": true,
   "credentials_recorded": false,
   "search_startup_retries": 0,
   "evidence": {
-    "source_commit": "1413025e2b51910efecebfaed5cf5df5209419b0",
-    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/42791543050",
+    "source_commit": "b54c4709cfb8c055a5c06ea66cb1dd157ae8c8dd",
+    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/42806367071",
     "artifact": "selfhost-compatibility",
-    "artifact_sha256": "0fdad7ff651c44ef4be39a16a3ac154ca09092f2b0a9101bce0853f9db935561"
+    "artifact_sha256": "963a944f97b77b607b33085393e6044bdde89b9c339c04bd28ca99546ede1b95"
   }
 }

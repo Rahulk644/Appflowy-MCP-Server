@@ -6,6 +6,8 @@
   },
   "checks": [
     "document_rich_text",
+    "native_markdown_table",
+    "uploaded_image_loaded",
     "number_create_update",
     "datetime_create_range_update",
     "select_labels_create_update",
@@ -17,9 +19,9 @@
   "ok": true,
   "credentials_recorded": false,
   "evidence": {
-    "source_commit": "1413025e2b51910efecebfaed5cf5df5209419b0",
-    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/42791543050",
+    "source_commit": "b54c4709cfb8c055a5c06ea66cb1dd157ae8c8dd",
+    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/42806367071",
     "artifact": "selfhost-compatibility",
-    "artifact_sha256": "0fdad7ff651c44ef4be39a16a3ac154ca09092f2b0a9101bce0853f9db935561"
+    "artifact_sha256": "963a944f97b77b607b33085393e6044bdde89b9c339c04bd28ca99546ede1b95"
   }
 }
