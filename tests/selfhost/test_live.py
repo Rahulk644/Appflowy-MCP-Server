@@ -80,6 +80,23 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             assert a._access_token and a._refresh_token
             assert any(item["workspace_id"] == ws for item in await b.get_workspaces())
         passed("password_login_and_token_refresh")
+        from live_compatibility import CompatibilityConfig, run_compatibility_checks
+
+        refresh_report = await run_compatibility_checks(
+            CompatibilityConfig(
+                deployment_type="disposable-self-hosted",
+                version="0.20.5",
+                build="",
+                workspace_id=ws,
+                database_id="",
+                document_id="",
+                parent_view_id="",
+                validate_token_refresh=True,
+            )
+        )
+        assert refresh_report["summary"] == {"passed": 3, "failed": 0, "skipped": 0}
+        assert refresh_report["checks"][1]["properties"]["refresh_succeeded"] is True
+        passed("operator_refresh_exact_token_readback")
         folder = await b.get_workspace_folder(ws, 2)
         parent = next(
             item["view_id"] for item in folder["children"] if item.get("is_space")

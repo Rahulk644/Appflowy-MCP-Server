@@ -104,11 +104,12 @@ async def _login_async() -> None:
     _token_expires_at = time.time() + expires_in - 60  # 60s buffer
 
 
-async def _refresh_async() -> None:
+async def _refresh_async() -> bool:
+    """Return True for an accepted GoTrue refresh, False for password fallback."""
     global _access_token, _refresh_token, _token_expires_at
     if not _refresh_token:
         await _login_async()
-        return
+        return False
 
     url = f"{BASE_URL}/gotrue/token?grant_type=refresh_token"
     data = {"refresh_token": _refresh_token}
@@ -117,7 +118,7 @@ async def _refresh_async() -> None:
     res = await client.post(url, json=data, headers={"User-Agent": USER_AGENT})
     if res.status_code != 200:
         await _login_async()  # refresh token expired -> re-login
-        return
+        return False
 
     body = res.json()
     _access_token = body.get("access_token")
@@ -125,6 +126,8 @@ async def _refresh_async() -> None:
         _refresh_token = body.get("refresh_token")
     expires_in = body.get("expires_in", 3600)
     _token_expires_at = time.time() + expires_in - 60
+
+    return True
 
 
 async def get_auth_headers_async() -> dict:

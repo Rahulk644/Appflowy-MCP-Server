@@ -70,6 +70,24 @@ write. The server never substitutes an empty document or silently retries a
 structural edit with guessed state. Obtain a sanitized representative failing
 snapshot before loosening the pin or proposing an upstream binary-format patch.
 
+## Operator token-refresh check
+
+With a dedicated account configured through `APPFLOWY_EMAIL` / `APPFLOWY_PASSWORD`,
+run:
+
+```bash
+python live_compatibility.py --validate-token-refresh --output refresh-report.json
+```
+
+This separate mode makes an initial workspace request, explicitly refreshes the
+GoTrue grant, then reads with that exact returned access token. It does not call
+the normal authentication fallback for readback, even if the expiry buffer makes
+a short-lived token stale locally. Password fallback is a failed refresh check.
+The report contains response shapes and safe boolean diagnostics, never tokens.
+Unset `APPFLOWY_ACCESS_TOKEN`; a static token cannot exercise the refresh grant.
+The refresh and reversible modes are mutually exclusive. Existing CI opt-in and
+disposable-workspace guards still apply.
+
 ## Opt-in Cloud job
 
 Configure the `appflowy-cloud-test` GitHub Actions environment with a dedicated,

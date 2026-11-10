@@ -54,9 +54,16 @@ class CompatibilityConfig:
     parent_view_id: str
     row_field_id: str = ""
     run_reversible: bool = False
+    validate_token_refresh: bool = False
+
+    def __post_init__(self):
+        if self.run_reversible and self.validate_token_refresh:
+            raise ValueError("Choose reversible checks or token refresh validation")
 
     @classmethod
-    def from_env(cls, *, run_reversible: bool = False) -> CompatibilityConfig:
+    def from_env(
+        cls, *, run_reversible: bool = False, validate_token_refresh: bool = False
+    ) -> CompatibilityConfig:
         return cls(
             deployment_type=os.environ.get(
                 "APPFLOWY_COMPAT_DEPLOYMENT_TYPE", "unspecified"
@@ -69,6 +76,7 @@ class CompatibilityConfig:
             document_id=os.environ.get("APPFLOWY_COMPAT_DOCUMENT_ID", ""),
             parent_view_id=os.environ.get("APPFLOWY_COMPAT_PARENT_VIEW_ID", ""),
             run_reversible=run_reversible,
+            validate_token_refresh=validate_token_refresh,
         )
 
 
@@ -276,6 +284,49 @@ async def _api_json(method: str, path: str, **kwargs) -> Any:
     return (await a._api_call_async(method, path, **kwargs)).json().get("data")
 
 
+async def _api_json_with_access_token(
+    method: str, path: str, access_token: str, **kwargs
+) -> Any:
+    """Call one API route with an exact token and no authentication fallback."""
+    client = await a._get_async_client()
+    response = await client.request(
+        method,
+        f"{a.BASE_URL}{path}",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": a.USER_AGENT,
+            "Content-Type": "application/json",
+        },
+        **kwargs,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    a._raise_appflowy_application_error(payload, path)
+    return payload.get("data")
+
+
+async def _validate_token_refresh() -> tuple[dict[str, bool], str]:
+    """Exercise GoTrue refresh without exposing either token to the report."""
+    if not a._refresh_token:
+        raise RuntimeError("Initial login did not provide a refresh token")
+
+    previous_access_token = a._access_token
+    refresh_succeeded = await a._refresh_async()
+    if not refresh_succeeded:
+        raise RuntimeError("Refresh was rejected and fell back to password login")
+    if not a._access_token:
+        raise RuntimeError("Refresh did not provide an access token")
+
+    return (
+        {
+            "refresh_succeeded": True,
+            "access_token_rotated": a._access_token != previous_access_token,
+            "refresh_token_present": bool(a._refresh_token),
+        },
+        a._access_token,
+    )
+
+
 async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any]:
     recorder = CompatibilityRecorder()
 
@@ -285,6 +336,32 @@ async def run_compatibility_checks(config: CompatibilityConfig) -> dict[str, Any
         route="/api/workspace",
         operation=lambda: _api_json("GET", "/api/workspace"),
     )
+    if config.validate_token_refresh:
+        refreshed_access_token = None
+
+        async def validate_token_refresh() -> dict[str, bool]:
+            nonlocal refreshed_access_token
+            result, refreshed_access_token = await _validate_token_refresh()
+            return result
+
+        refreshed = await recorder.record(
+            name="auth_token_refresh",
+            method="POST",
+            route="/gotrue/token?grant_type=refresh_token",
+            operation=validate_token_refresh,
+        )
+        if refreshed is not None:
+            recorder.checks[-1]["properties"] = refreshed
+        if refreshed is not None and refreshed_access_token is not None:
+            await recorder.record(
+                name="auth_after_token_refresh",
+                method="GET",
+                route="/api/workspace",
+                operation=lambda: _api_json_with_access_token(
+                    "GET", "/api/workspace", refreshed_access_token
+                ),
+            )
+        return _report(config, recorder)
     workspace_id = _extract_workspace_id(workspaces, config.workspace_id)
     if not workspace_id:
         recorder.skip(
@@ -573,6 +650,7 @@ def _report(
         "modes": {
             "read_only_default": True,
             "reversible_checks_enabled": config.run_reversible,
+            "token_refresh_validation_enabled": config.validate_token_refresh,
             "live_credentials_in_ci": False,
         },
         "checks": recorder.checks,
@@ -623,8 +701,18 @@ def _truthy_env(name: str) -> bool:
 
 async def _main_async(args: argparse.Namespace) -> int:
     _refuse_ci_without_explicit_opt_in()
-    config = CompatibilityConfig.from_env(run_reversible=args.run_reversible)
-    report = await run_compatibility_checks(config)
+    if args.validate_token_refresh and os.environ.get("APPFLOWY_ACCESS_TOKEN"):
+        raise SystemExit(
+            "Token refresh validation requires email/password login; unset APPFLOWY_ACCESS_TOKEN"
+        )
+    config = CompatibilityConfig.from_env(
+        run_reversible=args.run_reversible,
+        validate_token_refresh=args.validate_token_refresh,
+    )
+    try:
+        report = await run_compatibility_checks(config)
+    finally:
+        await a._close_async_client()
     output = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
         Path(args.output).write_text(output + "\n", encoding="utf-8")
@@ -637,7 +725,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run opt-in live AppFlowy compatibility checks."
     )
-    parser.add_argument(
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
         "--run-reversible",
         action="store_true",
         help=(
@@ -645,6 +734,11 @@ def main(argv: list[str] | None = None) -> int:
             "when configured, database row create/collab-edit/delete checks. "
             "Requires APPFLOWY_COMPAT_PARENT_VIEW_ID."
         ),
+    )
+    modes.add_argument(
+        "--validate-token-refresh",
+        action="store_true",
+        help="Run only login, GoTrue refresh and exact-token readback checks; no workspace mutations.",
     )
     parser.add_argument(
         "--output", help="Write the sanitized JSON report to this path."
