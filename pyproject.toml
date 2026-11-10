@@ -5,13 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "appflowy-mcp-server"
 dynamic = ["version"]
-description = "Model Context Protocol (MCP) server for AppFlowy Cloud — read, build, and edit your workspace from AI agents."
+description = "Open-source AppFlowy MCP server for AI agents: Markdown documents, typed database rows, search and import/export."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "appflowy-mcp-server contributors" }]
-keywords = ["mcp", "model-context-protocol", "appflowy", "ai-agents", "llm", "async"]
+keywords = ["mcp", "model-context-protocol", "appflowy", "ai-agents", "llm", "async", "markdown", "docker", "self-hosted"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Libraries",

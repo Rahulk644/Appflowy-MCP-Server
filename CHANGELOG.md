@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 — 2026-11-10
 
 - Add comment reads, replies and appends for documents, database rows and published
   pages through the existing compact fetch/update tools. Legacy mode adds two
@@ -9,6 +9,9 @@
   usable cursors, and verify all three comment targets on the disposable stack.
 - Fall back to the legacy document endpoint only for definitive unsupported-route
   responses; never replay ambiguous comment writes after errors or timeouts.
+- Refresh repository positioning around AppFlowy workflows, typed rows and Markdown.
+  Add client/setup answers and evidence links, align package/registry identity, and
+  replace the stale tool-count graphic with a light social preview.
 
 ## 2.0.2 — 2026-11-09
 

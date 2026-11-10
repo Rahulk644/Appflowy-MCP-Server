@@ -2,7 +2,7 @@
 
 ## Validated baseline
 
-On 2026-11-09, the disposable integration suite ran against the official
+On 2026-11-10, the disposable integration suite ran against the official
 [AppFlowy-SelfHost-Commercial](https://github.com/AppFlowy-IO/AppFlowy-SelfHost-Commercial/tree/0796497ebe36d569734fb8eb559f28264d86605c)
 compose stack at commit `0796497ebe36d569734fb8eb559f28264d86605c`:
 Cloud **0.20.5**, Web **0.20.11**, local GoTrue, Postgres, Redis, MinIO and keyword search.
