@@ -21,28 +21,8 @@ Independent community project; not affiliated with or endorsed by AppFlowy.
 The tested self-hosted baseline is Cloud **0.20.5** with Web **0.20.11**.
 See [compatibility and limitations](COMPATIBILITY.md) before choosing a deployment.
 
-## Built for AppFlowy workflows
-
-- **Typed database edits:** resolve field names and select options, write Number,
-  Checkbox and DateTime/range cells, and update existing Board cards in batches.
-- **Markdown documents:** create and edit pages or row bodies, use guarded
-  replacement, and import/export document trees with continuation cursors.
-- **A compact interface:** group related operations into async workflows, with an
-  exclusive legacy profile for existing integrations and a read-only profile for
-  discovery.
-- **Deployment choice:** published amd64/arm64 Docker images, a Git-based `uvx`
-  command, local stdio and authenticated HTTP. No source checkout is required.
-- **Tested self-hosted baseline:** disposable AppFlowy integration checks and browser
-  assertions for typed Grid cells, Board grouping, Formula and Timeline rendering.
-  Exact versions and validation limits are in [COMPATIBILITY.md](COMPATIBILITY.md).
-
-| Task for your AI assistant | Relevant workflow |
-|---|---|
-| Find a project brief and append a meeting checklist | Search, fetch and Markdown update |
-| Move an existing Board card to Done | Resolve the Status field, then update that row's cells |
-| Build a tracker with dates and select fields | Create a database, configure fields and create typed rows |
-| Read a card conversation and reply | Fetch comments by row ID, then append a reply |
-| Export a project subtree as Markdown | Export complete files and follow returned continuations |
+[Quick start](#quick-start) · [Client setup](examples/README.md) · [Tools](#tools) ·
+[Compatibility](COMPATIBILITY.md)
 
 ## Quick start
 
@@ -121,6 +101,29 @@ For a source-built service, configure `.env` and run `docker compose up -d --bui
 The Compose file does not publish a port; connect it to your HTTPS reverse proxy.
 Traefik labels require an existing proxy and shared Docker network. The optional
 `deploy_vps.sh` starts the service; it does not provision public routing or TLS.
+
+## Built for AppFlowy workflows
+
+- **Typed database edits:** resolve field names and select options, write Number,
+  Checkbox and DateTime/range cells, and update existing Board cards in batches.
+- **Markdown documents:** create and edit pages or row bodies, use guarded
+  replacement, and import/export document trees with continuation cursors.
+- **A compact interface:** group related operations into async workflows, with an
+  exclusive legacy profile for existing integrations and a read-only profile for
+  discovery.
+- **Deployment choice:** published amd64/arm64 Docker images, a Git-based `uvx`
+  command, local stdio and authenticated HTTP. No source checkout is required.
+- **Tested self-hosted baseline:** disposable AppFlowy integration checks and browser
+  assertions for typed Grid cells, Board grouping, Formula and Timeline rendering.
+  Exact versions and validation limits are in [COMPATIBILITY.md](COMPATIBILITY.md).
+
+| Task for your AI assistant | Relevant workflow |
+|---|---|
+| Find a project brief and append a meeting checklist | Search, fetch and Markdown update |
+| Move an existing Board card to Done | Resolve the Status field, then update that row's cells |
+| Build a tracker with dates and select fields | Create a database, configure fields and create typed rows |
+| Read a card conversation and reply | Fetch comments by row ID, then append a reply |
+| Export a project subtree as Markdown | Export complete files and follow returned continuations |
 
 ## Tools
 
