@@ -117,7 +117,7 @@ def _fit_page(data: list, request: m.ReadInput, total_count: int) -> dict:
 
 def _format_result(value: dict, response_format: str) -> dict:
     if response_format == "markdown":
-        items = value.get("items")
+        items = value.get("items", value.get("comments"))
         if isinstance(items, list):
             lines = []
             for item in items:
@@ -125,7 +125,11 @@ def _format_result(value: dict, response_format: str) -> dict:
                     label = item.get(
                         "name",
                         item.get(
-                            "title", item.get("id", item.get("object_id", "Item"))
+                            "title",
+                            item.get(
+                                "id",
+                                item.get("object_id", item.get("comment_id", "Item")),
+                            ),
                         ),
                     )
                     details = {
@@ -202,6 +206,71 @@ async def appflowy_search(request: m.SearchInput) -> dict:
     return render(data, request.response_format)
 
 
+def _comment_page(data: dict, request: m.FetchInput) -> dict:
+    """Keep complete comments while preserving the server's untrimmed cursor."""
+    if (
+        not isinstance(data, dict)
+        or not isinstance(data.get("comments"), list)
+        or any(
+            not isinstance(c, dict) or not c.get("comment_id") for c in data["comments"]
+        )
+        or len(data["comments"]) > request.limit
+        or not isinstance(data.get("has_more"), bool)
+        or (
+            data["has_more"]
+            and (
+                type(data.get("next_offset")) is not int
+                or data["next_offset"] <= request.offset
+            )
+        )
+        or (not data["has_more"] and data.get("next_offset") is not None)
+    ):
+        raise RuntimeError(
+            "Comment response contract changed: expected bounded comments and a progressing cursor"
+        )
+    comments = data["comments"]
+
+    def candidate(count):
+        shortened = count < len(comments)
+        return _format_result(
+            {
+                "comments": comments[:count],
+                "has_more": shortened or data["has_more"],
+                "next_offset": request.offset + count
+                if shortened
+                else data["next_offset"],
+            },
+            request.response_format,
+        )
+
+    result = candidate(len(comments))
+    if len(json.dumps(result, ensure_ascii=False)) <= MAX_RESULT_CHARS:
+        return result
+    low, high = 0, len(comments) - 1
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(json.dumps(candidate(middle), ensure_ascii=False)) <= MAX_RESULT_CHARS:
+            low = middle
+        else:
+            high = middle - 1
+    if low:
+        return candidate(low)
+    marker = {
+        "comment_id": str(comments[0]["comment_id"])[:256],
+        "content_omitted": True,
+        "message": "Comment exceeds the response budget; read it in AppFlowy",
+    }
+    more = len(comments) > 1
+    return _format_result(
+        {
+            "comments": [marker],
+            "has_more": more or data["has_more"],
+            "next_offset": request.offset + 1 if more else data["next_offset"],
+        },
+        request.response_format,
+    )
+
+
 async def appflowy_fetch(request: m.FetchInput) -> dict:
     """Read identity, folders, pages, database fields, or paginated comments by ID."""
     if request.id != "self":
@@ -216,22 +285,7 @@ async def appflowy_fetch(request: m.FetchInput) -> dict:
             limit=request.limit,
             offset=request.offset,
         )
-        comments = data["comments"]
-        result = _format_result(data, request.response_format)
-        while len(json.dumps(result, ensure_ascii=False)) > MAX_RESULT_CHARS:
-            if len(comments) > 1:
-                comments.pop()
-                data.update(has_more=True, next_offset=request.offset + len(comments))
-            else:
-                data["comments"] = [
-                    {
-                        "comment_id": str(comments[0].get("comment_id", ""))[:256],
-                        "content_omitted": True,
-                        "message": "Comment exceeds the response budget; read it in AppFlowy",
-                    }
-                ]
-            result = _format_result(data, request.response_format)
-        return result
+        return _comment_page(data, request)
     return bounded(
         await backend().appflowy_fetch(**request.model_dump(exclude={"target_type"}))
     )

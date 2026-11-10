@@ -512,7 +512,7 @@ async def _comment_target(workspace_id: str, target_id: str, target_type: str) -
     if target_type not in ("document", "published", "row"):
         raise ValueError("target_type must be document, published, or row")
     for value in (workspace_id, target_id):
-        if not re.fullmatch("[A-Za-z0-9_-]+", value):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
             raise ValueError("workspace_id and target_id must be resource IDs")
     if target_type == "published":
         # Public routes omit the workspace; verify scoped access first.
@@ -573,7 +573,7 @@ async def _append_row_comment(
     workspace_id: str, row_id: str, content: str, reply_id: str, database_view_id: str
 ) -> dict:
     if database_view_id:
-        if not re.fullmatch("[A-Za-z0-9_-]+", database_view_id):
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", database_view_id):
             raise ValueError("database_view_id must be a resource ID")
         await a._api_call(
             "GET", f"/api/workspace/{workspace_id}/page-view/{database_view_id}"
@@ -691,8 +691,15 @@ async def append_comment(
     For rows, supply database_view_id (Board/Grid view, NOT database ID) to send
     reply/mention notifications. Returns comment_id (null on older REST APIs).
     Non-idempotent: after a timeout, list comments before retrying."""
-    if not content.strip():
-        raise ValueError("content must not be empty")
+    if not content.strip() or len(content) > 100_000:
+        raise ValueError("content must contain 1–100,000 characters and not be blank")
+    for name, value in (
+        ("reply_comment_id", reply_comment_id),
+        ("block_id", block_id),
+        ("database_view_id", database_view_id),
+    ):
+        if value and not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+            raise ValueError(f"{name} must be a resource ID")
     if block_id and target_type != "document":
         raise ValueError("block_id is only supported for document comments")
     if database_view_id and target_type != "row":
