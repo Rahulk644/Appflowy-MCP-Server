@@ -37,6 +37,19 @@ async def diagnose(check_connection: bool = False) -> dict:
         bool(valid_url),
         "APPFLOWY_BASE_URL must be an http(s) origin without credentials",
     )
+    if os.environ.get("APPFLOWY_PUBLIC_URL") is not None:
+        from . import api
+
+        try:
+            api.public_file_origin()
+            public_origin_valid = True
+        except ValueError:
+            public_origin_valid = False
+        add(
+            "public_file_origin",
+            public_origin_valid,
+            "APPFLOWY_PUBLIC_URL must be an http(s) origin without credentials",
+        )
     credentials = bool(os.environ.get("APPFLOWY_ACCESS_TOKEN")) or bool(
         os.environ.get("APPFLOWY_EMAIL") and os.environ.get("APPFLOWY_PASSWORD")
     )

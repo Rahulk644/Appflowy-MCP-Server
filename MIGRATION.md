@@ -1,4 +1,4 @@
-# Migrating to 2.0
+# Migration guide
 
 Python **3.11+** and the official **MCP 2.3+** SDK are required. The server uses
 `mcp.server.mcpserver.MCPServer`; it supports legacy and 2026-07-28 protocol
@@ -134,3 +134,12 @@ Legacy mode has 36 tools: the original 34 plus `list_comments` and
 Comments act through the configured bot account. Appends are non-idempotent;
 if a result is uncertain or an older document endpoint returns no ID, read the
 conversation before retrying. Published-page targets must already be published.
+
+## Tables and uploaded images
+
+GFM pipe tables now create native simple tables. Existing Markdown and file-import
+calls remain valid. Add `append_image:true` to an `appflowy_import` file entry to
+insert the uploaded image into the target document. The 1 MB per-file, 2 MB batch
+and ten-file limits still apply. This uses the existing compact tool; there is no
+additional `upload_file` alias. See [the import contract](KNOWLEDGE.md#6-bounds-importexport-and-partial-outcomes)
+for public origins and recovery after partial success.

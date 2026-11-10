@@ -8,6 +8,7 @@ import asyncio
 import os
 import re
 import time
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -15,6 +16,31 @@ BASE_URL = os.environ.get("APPFLOWY_BASE_URL", "https://beta.appflowy.cloud").rs
     "/"
 )
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+def public_file_origin() -> str:
+    """Return the client-facing origin for stored files, never an upload destination."""
+    origin = os.environ.get("APPFLOWY_PUBLIC_URL", BASE_URL).rstrip("/")
+    try:
+        parsed = urlsplit(origin)
+        valid = (
+            parsed.scheme in {"http", "https"}
+            and bool(parsed.hostname)
+            and not parsed.username
+            and not parsed.password
+            and not parsed.query
+            and not parsed.fragment
+            and not parsed.path
+            and (parsed.port is None or 1 <= parsed.port <= 65535)
+            and not any(c.isspace() or c == "\\" for c in origin)
+        )
+    except ValueError:
+        valid = False
+    if not valid:
+        raise ValueError(
+            "APPFLOWY_PUBLIC_URL must be an http(s) origin without credentials, path, query or fragment"
+        )
+    return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
 
 
 def _csv_env(name: str) -> list[str]:

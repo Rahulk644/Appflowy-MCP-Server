@@ -136,13 +136,14 @@ def test_md_to_blocks_covers_core_palette():
     assert any(b["type"] == "divider" for b in blocks)
     img = next(b for b in blocks if b["type"] == "image")
     assert img["data"]["url"] == "http://img/p.png"
+    assert img["data"]["image_type"] == 2
 
 
 def test_md_to_blocks_empty_and_fallback():
     assert documents._md_to_blocks("") == []
     assert documents._md_to_blocks("   \n") == []
-    # an unsupported construct (GFM table) degrades to plaintext, never dropped
-    blocks = documents._md_to_blocks("| a | b |\n|---|---|\n| 1 | 2 |")
+    # Unsupported HTML degrades to plaintext, never dropped.
+    blocks = documents._md_to_blocks("<aside>Preserve this content</aside>")
     assert blocks and all(b["type"] == "paragraph" for b in blocks)
     assert (
         "".join(o["insert"] for b in blocks for o in b["data"]["delta"]).strip() != ""
