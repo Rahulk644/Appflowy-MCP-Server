@@ -86,6 +86,15 @@ including nested filters and Formula property calls. It removes only field order
 direct field/form settings. Relation deletion is delegated to AppFlowy for reciprocal
 cleanup. These checks do not scan other databases for incoming references.
 
+Comments use REST for documents and published pages, and incremental row-collab
+updates for card conversations. Row writes confirm their generated comment ID on
+readback and preserve unrelated cells. A failed notification returns a warning
+without replaying the saved comment. Document writes try the legacy route only
+after HTTP 404/405 from v2; ambiguous errors never trigger another append. Compact
+comment reads retain complete records and a progressing cursor within the output
+budget. Comment bodies are bounded to 100,000 characters; optional IDs are resource
+segments.
+
 Markdown replacement requires the expected fetched content. This protects against
 an already-stale read but cannot prevent edits arriving after that snapshot.
 Client-side list paging keeps complete records and their continuation, or an

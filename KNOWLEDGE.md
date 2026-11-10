@@ -199,7 +199,7 @@ include the specific evaluated/rendered examples above; they do not certify ever
 calculated value or UI mode.
 See COMPATIBILITY.md in the repository before assuming a backend version is tested.
 
-## Comments
+## 9. Comments
 
 Read with `appflowy_fetch(kind="comments", id=…, target_type="row")`; append with
 `appflowy_update(command="append_comment", id=…, target_type="row", content="…")`.
@@ -210,3 +210,11 @@ for replies. Legacy tools are `list_comments` and `append_comment`.
 Document comments accept `block_id`; highlighted-text anchors are not supported.
 For card reply/mention notifications, supply `database_view_id` (Board/Grid view).
 Writes use the bot identity. After a timeout, read before retrying to avoid duplicates.
+
+Comment bodies are limited to 100,000 characters. IDs must be resource segments.
+JSON pages retain complete comments and continuation metadata; Markdown reads
+format each comment with its ID. A record too large for a single response retains
+its ID and `content_omitted:true`. Document endpoints on older backends can return
+`comment_id:null` after an append; fetch the conversation before retrying. Live
+checks cover persistence and pagination; notifications to other users remain
+unverified.

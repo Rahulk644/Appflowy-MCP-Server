@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Add comment reads, replies and appends for documents, database rows and published
+  pages through the existing compact fetch/update tools. Legacy mode adds two
+  comment tools. Preserve author attribution and incremental row-collab edits.
+- Bound comment payloads and resource IDs, retain complete comment pages and
+  usable cursors, and verify all three comment targets on the disposable stack.
+- Fall back to the legacy document endpoint only for definitive unsupported-route
+  responses; never replay ambiguous comment writes after errors or timeouts.
+
 ## 2.0.2 — 2026-11-09
 
 ### Fixed

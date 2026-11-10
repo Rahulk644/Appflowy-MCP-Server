@@ -44,35 +44,35 @@
   "profiles": [
     {
       "profile": "legacy",
-      "tool_count": 34,
-      "schema_bytes": 31111,
+      "tool_count": 36,
+      "schema_bytes": 33430,
       "instructions_bytes": 1167,
-      "async_tools": 34,
-      "schema_reduction_vs_v1_percent": -1.4
+      "async_tools": 36,
+      "schema_reduction_vs_v1_percent": -9.0
     },
     {
       "profile": "compact",
       "tool_count": 11,
-      "schema_bytes": 18368,
+      "schema_bytes": 19119,
       "instructions_bytes": 757,
       "async_tools": 11,
-      "schema_reduction_vs_v1_percent": 40.1
+      "schema_reduction_vs_v1_percent": 37.7
     },
     {
       "profile": "compact_ai",
       "tool_count": 12,
-      "schema_bytes": 19980,
+      "schema_bytes": 20731,
       "instructions_bytes": 757,
       "async_tools": 12,
-      "schema_reduction_vs_v1_percent": 34.9
+      "schema_reduction_vs_v1_percent": 32.4
     },
     {
       "profile": "read_only",
       "tool_count": 5,
-      "schema_bytes": 5940,
+      "schema_bytes": 6079,
       "instructions_bytes": 757,
       "async_tools": 5,
-      "schema_reduction_vs_v1_percent": 80.6
+      "schema_reduction_vs_v1_percent": 80.2
     }
   ],
   "measurement": "UTF-8 bytes of serialized tool definitions; excludes client-specific lazy loading and tokenization",

@@ -103,6 +103,82 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         before = await b.get_page_markdown_async(ws, document)
         assert "Before **editing**" in before
         passed("document_create_and_markdown")
+        await w.appflowy_update(
+            m.UpdateInput(
+                workspace_id=ws,
+                command="append_comment",
+                id=document,
+                content="Document comment",
+            )
+        )
+        comments = await w.appflowy_fetch(
+            m.FetchInput(workspace_id=ws, kind="comments", id=document)
+        )
+        parent_comment = next(
+            c["comment_id"]
+            for c in comments["comments"]
+            if c["content"] == "Document comment"
+        )
+        await w.appflowy_update(
+            m.UpdateInput(
+                workspace_id=ws,
+                command="append_comment",
+                id=document,
+                content="Document reply",
+                reply_comment_id=parent_comment,
+            )
+        )
+        comments = await w.appflowy_fetch(
+            m.FetchInput(workspace_id=ws, kind="comments", id=document, limit=1)
+        )
+        assert comments["has_more"] and len(comments["comments"]) == 1
+        tail = await w.appflowy_fetch(
+            m.FetchInput(
+                workspace_id=ws,
+                kind="comments",
+                id=document,
+                offset=comments["next_offset"],
+            )
+        )
+        assert {c["content"] for c in comments["comments"] + tail["comments"]} == {
+            "Document comment",
+            "Document reply",
+        }
+        passed("document_comments_and_replies")
+        await a._api_call(
+            "POST",
+            f"/api/workspace/{ws}/page-view/{document}/publish",
+            json={"comments_enabled": True},
+        )
+        try:
+            await b.append_comment(ws, document, "published", "Published comment")
+            comments = await b.list_comments(ws, document, "published")
+            parent_comment = next(
+                c["comment_id"]
+                for c in comments["comments"]
+                if c["content"] == "Published comment"
+            )
+            await b.append_comment(
+                ws,
+                document,
+                "published",
+                "Published reply",
+                reply_comment_id=parent_comment,
+            )
+            comments = await b.list_comments(ws, document, "published", limit=1)
+            assert comments["has_more"]
+            tail = await b.list_comments(
+                ws, document, "published", offset=comments["next_offset"]
+            )
+            assert {c["content"] for c in comments["comments"] + tail["comments"]} == {
+                "Published comment",
+                "Published reply",
+            }
+            passed("published_comments_and_replies")
+        finally:
+            await a._api_call(
+                "POST", f"/api/workspace/{ws}/page-view/{document}/unpublish"
+            )
         await w.appflowy_blocks(
             m.BlocksInput(
                 workspace_id=ws,
@@ -246,6 +322,26 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         passed("typed_row_create_and_readback")
         assert "Body content" in await b.get_page_markdown_async(ws, row_id)
         passed("row_document_markdown_readback")
+        first_comment = await b.append_comment(ws, row_id, "row", "Card comment")
+        reply = await b.append_comment(
+            ws,
+            row_id,
+            "row",
+            "Card reply",
+            reply_comment_id=first_comment["comment_id"],
+            database_view_id=database["view_id"],
+        )
+        comments = await b.list_comments(ws, row_id, "row", limit=1)
+        assert comments["has_more"]
+        tail = await b.list_comments(ws, row_id, "row", offset=comments["next_offset"])
+        assert {c["comment_id"] for c in comments["comments"] + tail["comments"]} == {
+            first_comment["comment_id"],
+            reply["comment_id"],
+        }
+        assert (await b._collab_doc(ws, row_id, 4)).get("data", type=b.Map)["data"][
+            "cells"
+        ][title]["data"] == "MCP integration row"
+        passed("row_comments_and_replies")
         result = await w.appflowy_rows(
             m.RowsInput(
                 workspace_id=ws,
@@ -261,6 +357,10 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         assert result["ok"], result
         row = await b._collab_doc(ws, row_id, 4)
         assert row.get("data", type=b.Map)["data"]["cells"][done]["data"] == "No"
+        assert {c["comment_id"] for c in b._row_comments(row)} == {
+            first_comment["comment_id"],
+            reply["comment_id"],
+        }
         passed("typed_row_update_persistence")
         result = await w.appflowy_rows(
             m.RowsInput(workspace_id=ws, database_id=db, command="list", limit=1)

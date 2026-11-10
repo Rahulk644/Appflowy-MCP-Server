@@ -378,3 +378,111 @@ async def test_compact_comment_bounds_preserve_cursor(monkeypatch):
     assert result["has_more"] and result["next_offset"] == 11
     assert result["comments"][0]["comment_id"] == "first"
     assert result["comments"][0]["content_omitted"]
+
+
+@pytest.mark.parametrize("field", ["reply_comment_id", "block_id", "database_view_id"])
+@pytest.mark.parametrize("value", ["../other", "x" * 129])
+def test_comment_auxiliary_ids_are_bounded_resource_ids(field, value):
+    from pydantic import ValidationError
+
+    from appflowy_mcp import models
+
+    with pytest.raises(ValidationError):
+        models.UpdateInput(
+            command="append_comment", id="doc", content="Text", **{field: value}
+        )
+
+
+def test_comment_request_requires_target_and_bounds_text():
+    from pydantic import ValidationError
+
+    from appflowy_mcp import models
+
+    with pytest.raises(ValidationError, match="id must identify"):
+        models.FetchInput(kind="comments")
+    with pytest.raises(ValidationError):
+        models.UpdateInput(command="append_comment", id="doc", content="x" * 100_001)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"content": "x" * 100_001},
+        {"content": "Text", "reply_comment_id": "../other"},
+        {"content": "Text", "block_id": "x" * 129},
+        {"content": "Text", "database_view_id": "../other"},
+    ],
+)
+async def test_legacy_comment_guards_reject_before_network(monkeypatch, kwargs):
+    from appflowy_mcp import api
+
+    call = AsyncMock()
+    monkeypatch.setattr(api, "_api_call", call)
+    with pytest.raises(ValueError):
+        await server.append_comment("ws-allowed", "doc", "document", **kwargs)
+    call.assert_not_awaited()
+
+
+@pytest.mark.parametrize("response_format", ["json", "markdown"])
+def test_comment_pages_preserve_complete_records_and_original_server_cursor(
+    response_format,
+):
+    import copy
+    import json
+
+    from appflowy_mcp import models, workflows
+
+    data = {
+        "comments": [
+            {"comment_id": f"c-{i}", "content": "x" * 2000} for i in range(50)
+        ],
+        "has_more": True,
+        "next_offset": 80,
+    }
+    original = copy.deepcopy(data)
+    received = []
+    offset = 0
+    while offset < len(data["comments"]):
+        selected = {
+            "comments": data["comments"][offset:],
+            "has_more": True,
+            "next_offset": 80,
+        }
+        result = workflows._comment_page(
+            selected,
+            models.FetchInput(
+                kind="comments",
+                id="doc",
+                offset=offset,
+                response_format=response_format,
+            ),
+        )
+        assert len(json.dumps(result, ensure_ascii=False)) <= workflows.MAX_RESULT_CHARS
+        assert "preview" not in result
+        if response_format == "json":
+            assert not any(c.get("content_omitted") for c in result["comments"])
+            received.extend(result["comments"])
+        if result["next_offset"] == 80:
+            break
+        assert result["next_offset"] > offset
+        offset = result["next_offset"]
+    if response_format == "json":
+        assert received == data["comments"]
+    assert data == original
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"comments": [], "has_more": True, "next_offset": 0},
+        {"comments": [], "has_more": True, "next_offset": None},
+        {"comments": [], "has_more": False, "next_offset": 1},
+        {"comments": [{}], "has_more": False, "next_offset": None},
+    ],
+)
+def test_comment_paging_rejects_contract_drift(data):
+    from appflowy_mcp import models, workflows
+
+    with pytest.raises(RuntimeError, match="Comment response contract changed"):
+        workflows._comment_page(data, models.FetchInput(kind="comments", id="doc"))

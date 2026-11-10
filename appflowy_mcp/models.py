@@ -88,6 +88,8 @@ class FetchInput(ReadInput):
                 + (" offset" if self.response_format == "markdown" else ""),
             }[kind],
         )
+        if kind == "comments" and self.id == "self":
+            raise ValueError("id must identify a document, published page or row")
         if (
             kind == "database_fields"
             and self.database_id
@@ -189,10 +191,14 @@ class UpdateInput(Input):
     expected_markdown: Markdown | None = None
 
     target_type: Literal["document", "published", "row"] = "document"
-    content: str = ""
-    reply_comment_id: str = ""
-    block_id: str = ""
-    database_view_id: str = ""
+    content: Markdown = ""
+    reply_comment_id: str = Field(
+        default="", max_length=128, pattern=r"^[A-Za-z0-9_-]*$"
+    )
+    block_id: str = Field(default="", max_length=128, pattern=r"^[A-Za-z0-9_-]*$")
+    database_view_id: str = Field(
+        default="", max_length=128, pattern=r"^[A-Za-z0-9_-]*$"
+    )
 
     @model_validator(mode="after")
     def applicable_fields(self):

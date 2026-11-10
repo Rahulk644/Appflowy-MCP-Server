@@ -23,7 +23,7 @@ The source contracts were also checked against AppFlowy-Web commit
 | Structured private/custom space ACL | Live write/readback as owner | Separate member/guest checks blocked by the unlicensed commercial stack's one-seat limit (`LicenseLimitHit`, 1120) |
 | MCP 2 server and input errors | Protocol contract tests plus clean-install stdio/HTTP | Desktop product UIs not individually certified |
 | Google OAuth routing and persistence | Official MCP SDK HTTP login/PKCE/refresh/replay/revocation contract and provider tests | No real Google sign-in performed in CI |
-| Comments | Offline REST/CRDT contract tests | Live comment reads, writes and notifications remain unverified |
+| Comments | REST/CRDT contracts and disposable read/append/reply/pagination checks for documents, rows and published pages; row cells survive comment writes | Highlighted-text anchors, attachments, reactions and multi-user notifications are not live-validated; older document endpoints return no ID, so read back before retrying |
 | AI chat | Current Web contract and decoder tests | Answer generation needs an AI-enabled deployment; opt-in and experimental |
 | AppFlowy SaaS | Protected opt-in harness | No current Cloud account/workspace configured for this release |
 
