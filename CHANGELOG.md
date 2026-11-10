@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add an operator-only GoTrue refresh check with exact-token readback, short-expiry
+  coverage and sanitized diagnostics, adapting contribution #15 to the shared API
+  owner. Keep refresh and reversible modes separate and close the client on exit.
+
 ## 2.1.0 — 2026-11-10
 
 - Add comment reads, replies and appends for documents, database rows and published
