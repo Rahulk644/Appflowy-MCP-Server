@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Validate the v2.2.0 runtime against pinned AppFlowy Cloud 0.21.4 / Web 0.20.12
+  and use that deployment in disposable CI. Share deployment metadata between the
+  runner and reports; retain the previous baseline's evidence.
+- Check a job-local 0.21.4 database snapshot on supported and candidate decoders;
+  publish only sanitized results and keep the supported pycrdt pin. Document the
+  official MCP's different access model and published capabilities, and correct
+  stale table/image limitations.
+
 ## 2.2.0 — 2026-11-10
 
 - Convert GFM tables to native AppFlowy simple tables and render table cells back

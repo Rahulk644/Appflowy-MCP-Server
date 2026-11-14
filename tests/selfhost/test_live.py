@@ -10,6 +10,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
+from scripts.selfhost import CLOUD_VERSION, UPSTREAM_COMMIT
+
 pytestmark = [
     pytest.mark.asyncio,
     pytest.mark.skipif(
@@ -85,7 +87,7 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
         refresh_report = await run_compatibility_checks(
             CompatibilityConfig(
                 deployment_type="disposable-self-hosted",
-                version="0.20.5",
+                version=CLOUD_VERSION,
                 build="",
                 workspace_id=ws,
                 database_id="",
@@ -383,6 +385,18 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             == "MCP integration row"
         )
         passed("typed_row_create_and_readback")
+        # Keep current snapshots inside the test job. Only sanitized decoder
+        # outcomes are uploaded; the raw database bytes are never CI artifacts.
+        fixture_path = os.environ.get("APPFLOWY_SELFHOST_FIXTURE_PATH")
+        if fixture_path:
+            response = await a._api_call_async(
+                "GET",
+                f"/api/workspace/v1/{ws}/collab/{db}",
+                params={"collab_type": 1},
+            )
+            snapshot = Path(fixture_path)
+            snapshot.write_bytes(b._collab_doc_state(response.json()))
+            snapshot.chmod(0o600)
         assert "Body content" in await b.get_page_markdown_async(ws, row_id)
         passed("row_document_markdown_readback")
         first_comment = await b.append_comment(ws, row_id, "row", "Card comment")
@@ -622,8 +636,8 @@ async def test_disposable_workspace_lifecycle(monkeypatch, tmp_path):
             "schema": "appflowy-mcp.integration-report.v1",
             "deployment": {
                 "type": "disposable-self-hosted",
-                "version": "0.20.5",
-                "source_commit": "0796497ebe36d569734fb8eb559f28264d86605c",
+                "version": CLOUD_VERSION,
+                "source_commit": UPSTREAM_COMMIT,
             },
             "checks": checks,
             "passed": sum(item["ok"] for item in checks),

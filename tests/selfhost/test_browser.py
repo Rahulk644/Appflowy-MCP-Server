@@ -8,6 +8,8 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
+from scripts.selfhost import CLOUD_VERSION, UPSTREAM_COMMIT, WEB_VERSION
+
 pytestmark = [
     pytest.mark.asyncio,
     pytest.mark.skipif(
@@ -336,7 +338,11 @@ async def test_web_renders_mcp_document_and_row(monkeypatch):
             json.dumps(
                 {
                     "schema": "appflowy-mcp.browser-report.v1",
-                    "deployment": {"cloud": "0.20.5", "web": "0.20.11"},
+                    "deployment": {
+                        "cloud": CLOUD_VERSION,
+                        "web": WEB_VERSION,
+                        "source_commit": UPSTREAM_COMMIT,
+                    },
                     "checks": [
                         "document_rich_text",
                         "native_markdown_table",

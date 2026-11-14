@@ -2,14 +2,20 @@
 
 ## Validated baseline
 
-On 2026-11-10, the disposable integration suite ran against the official
-[AppFlowy-SelfHost-Commercial](https://github.com/AppFlowy-IO/AppFlowy-SelfHost-Commercial/tree/0796497ebe36d569734fb8eb559f28264d86605c)
-compose stack at commit `0796497ebe36d569734fb8eb559f28264d86605c`:
-Cloud **0.20.5**, Web **0.20.11**, local GoTrue, Postgres, Redis, MinIO and keyword search.
+On 2026-11-14, the disposable integration suite ran against the official
+[AppFlowy-SelfHost-Commercial](https://github.com/AppFlowy-IO/AppFlowy-SelfHost-Commercial/tree/e39869a2bae964e951832e577407e35a548b48c8)
+compose stack at commit `e39869a2bae964e951832e577407e35a548b48c8`:
+Cloud **0.21.4**, Web **0.20.12**, local GoTrue, Postgres, Redis, MinIO and keyword search.
 Cloud image digest:
-`sha256:4c45a647ae892783afdc8af175c9f2e75d54085a47e62aea1a347a562e0345f3`.
+`sha256:ad9fc55d4595221d8251f69e441232556192d5d298b62ed3a644f98a455ed927`.
+Web image digest:
+`sha256:f439f4495b7ce8cf5e3f1157bb88ef312c3b09c3ce37d2bdb91bfbd64958d841`.
 The source contracts were also checked against AppFlowy-Web commit
-`d940e0e767b0bb8df594bb15a9390b958ff89ee4`.
+`c88afa5e17c862f2fc60d968dd675afab57e5f75` (Web 0.20.12).
+The v2.2.0 runtime passed all 31 live checks and ten browser categories without
+runtime changes. Previous 0.20.5 / 0.20.11 reports remain in
+[compatibility-reports](compatibility-reports/); success on either baseline is
+specific to those versions.
 
 | Area | Evidence | Limits |
 |---|---|---|
@@ -20,11 +26,11 @@ The source contracts were also checked against AppFlowy-Web commit
 | Keyword search and bounded results | Live search hit | Requires deployed search service; semantic search not claimed |
 | Markdown tree import/export | Live persistence; scoped subtree, tree continuation and large-document chunk reassembly checks | Complete text entries or explicit chunk-fetch warnings; no atomic archive or ZIP/Notion/PDF converter |
 | File payload upload/download/delete and optional image insertion | Live byte comparison, image-block readback, browser image loading and cleanup | Small files; no multipart/20 MB payloads or arbitrary media orchestration. A separate public origin is covered by offline request-routing tests |
-| Formula expression and Timeline settings | Collab write/readback; Grid evaluates `1 + 2` to `3`; configured Timeline toolbar and row render | Complex formula references/functions, Timeline dragging and every layout setting are not covered |
+| Formula expression and Timeline settings | Collab write/readback; Grid evaluates `1 + 2` to `3`; configured Timeline toolbar and row render | Complex formula references/functions, date-only equality, Timeline dragging and every layout setting are not covered |
 | Structured private/custom space ACL | Live write/readback as owner | Separate member/guest checks blocked by the unlicensed commercial stack's one-seat limit (`LicenseLimitHit`, 1120) |
 | MCP 2 server and input errors | Protocol contract tests plus clean-install stdio/HTTP | Desktop product UIs not individually certified |
 | Google OAuth routing and persistence | Official MCP SDK HTTP login/PKCE/refresh/replay/revocation contract and provider tests | No real Google sign-in performed in CI |
-| Comments | REST/CRDT contracts and disposable read/append/reply/pagination checks for documents, rows and published pages; row cells survive comment writes | Highlighted-text anchors, attachments, reactions and multi-user notifications are not live-validated; older document endpoints return no ID, so read back before retrying |
+| Comments | REST/CRDT contracts and disposable read/append/reply/pagination checks for documents, rows and published pages; row cells survive comment writes | Highlighted-text anchors, attachments, reactions and person-mention notifications are not live-validated; older document endpoints return no ID, so read back before retrying |
 | AI chat | Current Web contract and decoder tests | Answer generation needs an AI-enabled deployment; opt-in and experimental |
 | AppFlowy SaaS | Protected opt-in harness | No current Cloud account/workspace configured for this release |
 
@@ -36,6 +42,11 @@ failures are not labeled validated.
 The search probe waits within a fixed retry budget for indexing and the baseline's
 explicit temporary-unavailable code (1054). Other API errors fail immediately; an
 eventual matching document hit is still required. Reports include startup retries.
+
+The Web Formula fix for date-only calendar-day comparisons
+([AppFlowy-Web #720](https://github.com/AppFlowy-IO/AppFlowy-Web/pull/720)) merged
+after 0.20.12. It is not part of this tested image. Do not treat a server write
+succeeding as proof that every client Formula comparison evaluates correctly.
 
 ## Reproduce disposable checks
 
@@ -61,15 +72,35 @@ AppFlowy releases change. A passing baseline does not prove every later release.
 
 ## Decoder policy
 
-Production remains pinned to **pycrdt 0.13.0**. The captured disposable database
-fixture passes decode and incremental structural-mutation convergence on both
-0.13.0 and 0.14.1. It does **not** reproduce the historical 0.14.1 decoding failure.
+Production remains pinned to **pycrdt 0.13.0**. The committed 0.20.5 fixture and a
+job-local 0.21.4 snapshot pass decode and incremental structural-mutation
+convergence on both 0.13.0 and 0.14.1. Neither reproduces the historical 0.14.1
+decoding failure. CI captures its current snapshot in the runner's temporary
+directory, checks the supported pin and isolated candidates, and uploads only
+sanitized outcomes. No current raw snapshot is committed or uploaded.
 CI tests 0.13.0 as required and 0.14.1/latest as non-blocking candidates.
 
 Decode errors raise `CollabDecodeError` with the supported pin and stop before any
 write. The server never substitutes an empty document or silently retries a
 structural edit with guessed state. Obtain a sanitized representative failing
 snapshot before loosening the pin or proposing an upstream binary-format patch.
+
+## AppFlowy's official MCP
+
+The [README comparison](README.md#this-server-or-appflowys-official-mcp) uses these
+first-party sources, checked on 2026-11-14:
+
+- [AI app plugins and setup](https://github.com/AppFlowy-IO/appflowy-ai-plugins/blob/318a8c81cab86418fa3e71cc8e03b7cb874378a6/README.md): AppFlowy sign-in, workspace-scoped connections, permission scopes, approvals and self-hosted license requirements.
+- [Published tool catalog](https://github.com/AppFlowy-IO/appflowy-ai-plugins/blob/318a8c81cab86418fa3e71cc8e03b7cb874378a6/catalog/tools.json): 45 tool definitions in catalog version 25, including forms/sharing, reminders, saved filters, Chart/Dashboard controls and comment resolution/deletion. A catalog snapshot does not establish which tools a live connection receives.
+- [Web MCP guide](https://github.com/AppFlowy-IO/AppFlowy-Web/blob/c88afa5e17c862f2fc60d968dd675afab57e5f75/doc/MCP.md): separate MCP service, OAuth setup and the Settings connection-management flow.
+- [Commercial deployment release notes](https://github.com/AppFlowy-IO/AppFlowy-SelfHost-Commercial/blob/e39869a2bae964e951832e577407e35a548b48c8/README.md#release-notes): managed AI app policies, workspace authoring and service rollout requirements.
+
+The cited plugin README marks its AppFlowy Cloud MCP endpoint as not live yet.
+Check the current official rollout status before using those Cloud setup commands.
+This is a source/catalog comparison; the official MCP service has not been
+authenticated or benchmarked here. This community server's current SaaS workspace
+paths also remain unvalidated. Neither source review nor self-hosted CI certifies
+current SaaS behavior or relative model accuracy, latency or cost.
 
 ## Operator token-refresh check
 
