@@ -9,6 +9,8 @@
   publish only sanitized results and keep the supported pycrdt pin. Document the
   official MCP's different access model and published capabilities, and correct
   stale table/image limitations.
+- Preserve decoder failures in the historical-fixture CI check; report output
+  redirection no longer masks the decoder command's exit status.
 
 ## 2.2.0 — 2026-11-10
 

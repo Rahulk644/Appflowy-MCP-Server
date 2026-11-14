@@ -25,9 +25,10 @@ For an explicitly captured local snapshot:
 python scripts/check_collab.py /private/test-directory/database-current.bin
 ```
 
-Both pycrdt 0.13.0 and 0.14.1 pass the historical committed fixture and the locally
-captured 0.21.4 database. Neither reproduces the historical regression on other
-databases. The supported runtime pin
+Both pycrdt 0.13.0 and 0.14.1 pass the historical committed fixture and the
+job-local 0.21.4 database. The [current decoder report](../../compatibility-reports/decoders-0.21.4-2026-11-14.json)
+records the resolved candidate versions and CI outcomes. These snapshots do not
+reproduce the historical regression on other databases. The supported runtime pin
 remains 0.13.0 until a representative failing historical fixture and a broader
 matrix establish a safe upgrade. Decode failures raise `CollabDecodeError` before
 any mutation is sent; an undecodable snapshot is never replaced by an empty Doc.

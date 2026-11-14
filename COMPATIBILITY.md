@@ -66,6 +66,11 @@ Do not point these tests at an existing production stack using that project name
 Use `APPFLOWY_TEST_CHROMIUM=/path/to/chromium` for an existing browser binary.
 The WebSocket base ends in `/ws/v2`; `/ws` prevents live row rendering.
 
+After changing the pinned deployment, remove the earlier disposable project with
+its `down` command and use a fresh `--directory` for `up`, `test` and `down`.
+The runner refuses to reuse a checkout from a different pin. These directories
+are test state, not production upgrade or migration instructions.
+
 The compatibility workflow runs on PRs, weekly, and as a release gate. Its baseline
 is pinned for reproducibility; update the commit and record new evidence when
 AppFlowy releases change. A passing baseline does not prove every later release.
