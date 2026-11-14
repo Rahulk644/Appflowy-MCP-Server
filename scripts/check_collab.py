@@ -1,5 +1,6 @@
 """Verify decode and incremental structural mutations on disposable database snapshots."""
 
+import argparse
 import json
 from importlib.metadata import version
 from pathlib import Path
@@ -37,7 +38,12 @@ def verify(path: Path) -> dict:
 
 
 def main():
-    fixtures = sorted(
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "snapshots", type=Path, nargs="*", help="Job-local snapshots to check"
+    )
+    args = parser.parse_args()
+    fixtures = args.snapshots or sorted(
         (Path(__file__).resolve().parent.parent / "tests/fixtures").glob(
             "database-*.bin"
         )
@@ -48,7 +54,14 @@ def main():
     for path in fixtures:
         try:
             results.append(verify(path))
-        except (ValueError, RuntimeError, AssertionError, KeyError, TypeError) as exc:
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+            AssertionError,
+            KeyError,
+            TypeError,
+        ) as exc:
             results.append(
                 {
                     "fixture": path.name,

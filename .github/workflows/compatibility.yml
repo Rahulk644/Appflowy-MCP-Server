@@ -32,7 +32,7 @@ jobs:
     - run: pip install -e '.[dev,browser]'
     - name: Install browser for visible-content verification
       run: python -m playwright install --with-deps chromium
-    - name: Start pinned disposable AppFlowy 0.20.5
+    - name: Start pinned disposable AppFlowy
       run: python scripts/selfhost.py up
     - name: Validate live persistence
       env:
@@ -40,7 +40,31 @@ jobs:
         APPFLOWY_BROWSER_TEST: 'true'
         APPFLOWY_BROWSER_REPORT: compatibility-reports/browser-ci.json
         APPFLOWY_BROWSER_ARTIFACT_DIR: compatibility-reports/browser-failure
+        APPFLOWY_SELFHOST_FIXTURE_PATH: ${{ runner.temp }}/database-current.bin
       run: python scripts/selfhost.py test
+    - name: Check supported decoder on the current database snapshot
+      env:
+        SNAPSHOT_PATH: ${{ runner.temp }}/database-current.bin
+      run: python scripts/check_collab.py "$SNAPSHOT_PATH" > compatibility-reports/pycrdt-current-0.13.0-ci.json
+    - name: Check candidate decoders on the current database snapshot
+      continue-on-error: true
+      env:
+        SNAPSHOT_PATH: ${{ runner.temp }}/database-current.bin
+        DECODER_DIRECTORY: ${{ runner.temp }}/appflowy-decoder
+      run: |
+        candidate_failure=0
+        for candidate in 0.14.1 latest; do
+          python -m venv "$DECODER_DIRECTORY-$candidate"
+          decoder_python="$DECODER_DIRECTORY-$candidate/bin/python"
+          requirement=pycrdt
+          if [ "$candidate" != latest ]; then requirement="pycrdt==$candidate"; fi
+          if ! "$decoder_python" -m pip install "$requirement"; then
+            candidate_failure=1
+          elif ! "$decoder_python" scripts/check_collab.py "$SNAPSHOT_PATH" > "compatibility-reports/pycrdt-current-$candidate-ci.json"; then
+            candidate_failure=1
+          fi
+        done
+        exit "$candidate_failure"
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:

@@ -18,11 +18,11 @@ compact profile exposes **11 async workflow tools** with typed inputs, bounded
 responses and explicit results for partial batch failures.
 
 Independent community project; not affiliated with or endorsed by AppFlowy.
-The tested self-hosted baseline is Cloud **0.20.5** with Web **0.20.11**.
+The tested self-hosted baseline is Cloud **0.21.4** with Web **0.20.12**.
 See [compatibility and limitations](COMPATIBILITY.md) before choosing a deployment.
 
 [Quick start](#quick-start) · [Client setup](examples/README.md) · [Tools](#tools) ·
-[Compatibility](COMPATIBILITY.md)
+[Choosing a server](#this-server-or-appflowys-official-mcp) · [Compatibility](COMPATIBILITY.md)
 
 ## Quick start
 
@@ -220,9 +220,30 @@ process or Streamable HTTP for a running service. Copy the
 [client-specific recipes](examples/README.md). Automated checks cover the MCP
 protocol and packaged server; individual desktop interfaces are not certified.
 
+### This server or AppFlowy's official MCP?
+
+AppFlowy also provides its own MCP service and AI app plugins. Choose based on the
+deployment and access model your workflow needs:
+
+| Requirement | This community server | AppFlowy's official MCP |
+|---|---|---|
+| Local process | Native stdio through `uvx` or Docker; HTTP is also available | The official guide describes an HTTP service with AppFlowy sign-in |
+| Identity and access | One configured bot account; server-wide workspace allow-list and read-only mode | User sign-in, a workspace per connection, and read/write/admin scopes |
+| Managed team connections | HTTP shared secret or optional Google OAuth; every approved client uses the same bot | Workspace app approvals, per-device disconnects and administrator policies |
+| Main workflows | Eleven grouped tools for Markdown, typed rows, comments, small uploads and bounded import/export | The published catalog also includes dedicated forms, reminders, saved filters and Chart/Dashboard controls |
+| Self-hosted requirements | An AppFlowy account with the needed API permissions; no separate MCP license key | The official self-hosted MCP requires a One, Team or Enterprise license |
+
+Use this server for local, customizable bot automation. Consider the official
+integration when AppFlowy-managed user connections and its additional workflows
+are required. This server is MIT licensed; the underlying AppFlowy deployment's
+license, seat limits and permissions still apply. Configure it directly in your
+MCP client; AppFlowy's Settings → MCP flow belongs to the official service.
+See [comparison sources and
+availability limits](COMPATIBILITY.md#appflowys-official-mcp) before deploying.
+
 ### Does it work with self-hosted AppFlowy?
 
-The disposable CI baseline is AppFlowy Cloud **0.20.5** with Web **0.20.11** from
+The disposable CI baseline is AppFlowy Cloud **0.21.4** with Web **0.20.12** from
 the first-party commercial self-host stack. `APPFLOWY_BASE_URL` selects the origin.
 The default origin is AppFlowy SaaS; current SaaS behavior still needs a dedicated
 live validation run. See [deployment evidence](COMPATIBILITY.md).
@@ -259,8 +280,9 @@ each client a separate AppFlowy identity. See [SECURITY.md](SECURITY.md).
   incoming references from other databases are not inspected.
 - Document replacement checks a fetched snapshot and then sends a merging update;
   it is not an atomic server-side compare-and-swap.
-- Tables fall back to text. Rich media, columns, PDF/ZIP conversion and large-file
-  multipart workflows are incomplete. Small uploads do not insert media blocks.
+- GFM tables use native simple-table blocks; Markdown export does not preserve
+  table layout styling. Small uploads can insert image blocks. Other rich media,
+  columns, PDF/ZIP conversion and large-file multipart workflows are incomplete.
 - Current SaaS and AI answer generation are not certified by self-hosted CI.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and checks,

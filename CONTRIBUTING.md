@@ -53,6 +53,11 @@ or dependency changes, follow [RELEASING.md](RELEASING.md). Backend/CRDT changes
 also need the disposable [compatibility suite](COMPATIBILITY.md). Keep test data
 isolated from production and remove disposable services with the runner's `down`.
 
+`scripts/selfhost.py` owns the deployment commit and version metadata shared by
+the live/browser reports. Keep current decoder snapshots in the job's temporary
+directory; publish only sanitized outcomes. See [fixture handling](tests/fixtures/README.md)
+before updating compatibility evidence.
+
 ## Code and documentation
 
 - Keep network work async and reuse the AppFlowy client/session lifecycle.

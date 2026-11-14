@@ -7,7 +7,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-UPSTREAM_COMMIT = "0796497ebe36d569734fb8eb559f28264d86605c"
+UPSTREAM_COMMIT = "e39869a2bae964e951832e577407e35a548b48c8"
+CLOUD_VERSION = "0.21.4"
+WEB_VERSION = "0.20.12"
 SERVICES = (
     "postgres",
     "redis",
