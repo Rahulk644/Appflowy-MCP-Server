@@ -1,0 +1,56 @@
+{
+  "schema": "appflowy-mcp.decoder-report.v1",
+  "deployment": {
+    "cloud": "0.21.4",
+    "web": "0.20.12",
+    "source_commit": "e39869a2bae964e951832e577407e35a548b48c8"
+  },
+  "required_pycrdt": "0.13.0",
+  "candidates_non_blocking": true,
+  "reports": [
+    {
+      "requested_version": "0.13.0",
+      "pycrdt": "0.13.0",
+      "results": [
+        {
+          "fixture": "database-current.bin",
+          "bytes": 2567,
+          "decode": true,
+          "structural_diff_roundtrip": true
+        }
+      ]
+    },
+    {
+      "requested_version": "0.14.1",
+      "pycrdt": "0.14.1",
+      "results": [
+        {
+          "fixture": "database-current.bin",
+          "bytes": 2567,
+          "decode": true,
+          "structural_diff_roundtrip": true
+        }
+      ]
+    },
+    {
+      "requested_version": "latest",
+      "pycrdt": "0.14.13",
+      "results": [
+        {
+          "fixture": "database-current.bin",
+          "bytes": 2567,
+          "decode": true,
+          "structural_diff_roundtrip": true
+        }
+      ]
+    }
+  ],
+  "raw_snapshot_published": false,
+  "credentials_recorded": false,
+  "evidence": {
+    "source_commit": "9fb5a7615c1a14b3e6dce6ab6a9e63554ea6bd4e",
+    "workflow_run": "https://github.com/Rahulk644/Appflowy-MCP-Server/actions/runs/43590322775",
+    "artifact": "selfhost-compatibility",
+    "artifact_sha256": "c9254e56d8c9e8681c5ff9b1fc92da879da5b246cfed23bfef45dad0f326d4e8"
+  }
+}

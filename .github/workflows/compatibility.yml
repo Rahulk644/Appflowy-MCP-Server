@@ -94,7 +94,7 @@ jobs:
       run: |
         if [ "$CANDIDATE" = latest ]; then pip install pycrdt; else pip install "pycrdt==$CANDIDATE"; fi
     - name: Decode and mutate captured disposable snapshots
-      run: python scripts/check_collab.py | tee pycrdt-report.json
+      run: python scripts/check_collab.py > pycrdt-report.json
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       if: always()
       with:
